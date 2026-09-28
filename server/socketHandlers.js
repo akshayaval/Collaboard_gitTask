@@ -30,7 +30,7 @@ module.exports = function registerHandlers(io, socket) {
     if (!currentRoomId) return;
     const action = {
       id: data.actionId,
-      type: 'stroke',
+      type: data.tool === 'eraser' ? 'erase' : (data.type || 'stroke'),
       points: [data.point],
       color: data.color,
       width: data.width,

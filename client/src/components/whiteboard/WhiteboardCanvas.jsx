@@ -2,12 +2,11 @@
 
 import React, { useEffect, useRef, useCallback } from 'react'
 import {
-  renderAllActions, renderAction, drawGrid, getCanvasPos,
+  renderAllActions, renderAction, renderSelectionBounds, drawGrid, getCanvasPos,
   TOOLS, compositeCanvases
 } from '../../lib/drawingEngine'
 import CursorOverlay from './CursorOverlay'
 import styles from './WhiteboardCanvas.module.css'
-
 
 export default function WhiteboardCanvas({
   wb,           // useWhiteboard hook state + handlers
@@ -72,122 +71,43 @@ export default function WhiteboardCanvas({
 
   useEffect(() => { redrawContent() }, [redrawContent])
 
-  // ── Scratch (live stroke & shape preview) ─────────────────────────────────
+  // ── Scratch (selection bounds when idle) ─────────────────────────────────
   useEffect(() => {
     const canvas = scratchRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Draw active freehand stroke
-    if (wb.activeStroke.current) {
-      renderAction(ctx, wb.activeStroke.current)
+    if (!wb.activeStroke.current && !wb.shapeStart.current && !wb.dragState.current) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (wb.state.selectedId) {
+        const sel = wb.state.actions.find(a => a.id === wb.state.selectedId)
+        if (sel) renderSelectionBounds(ctx, sel)
+      }
     }
-    // Draw selection bounds when idle
-    if (wb.state.selectedId && !wb.dragState.current) {
-      const sel = wb.state.actions.find(a => a.id === wb.state.selectedId)
-      if (sel) renderSelectionBounds(ctx, sel)
-    }
-  })
+  }, [wb.state.selectedId, wb.state.actions])
 
   // ── Pointer events ────────────────────────────────────────────────────────
   const handlePointerDown = useCallback((e) => {
-    wb.handlePointerDown(e, scratchRef.current)
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    wb.handlePointerDown(e, scratchRef.current, contentRef.current)
   }, [wb])
 
   const handlePointerMove = useCallback((e) => {
-    wb.handlePointerMove(e, scratchRef.current)
-
-    // Shape preview on scratch canvas
-    const canvas = scratchRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const pos = getCanvasPos(e, canvas)
-    const { tool, color, width } = wb.stateRef.current
-    const shapeStart = wb.shapeStart.current
-
-    if (shapeStart && (tool === TOOLS.RECT || tool === TOOLS.ELLIPSE || tool === TOOLS.LINE || tool === TOOLS.ARROW)) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      // Draw active stroke on scratch too
-      if (wb.activeStroke.current) renderAction(ctx, wb.activeStroke.current)
-
-      let preview
-      if (tool === TOOLS.RECT) {
-        preview = { type: 'rect', x: Math.min(shapeStart.x, pos.x), y: Math.min(shapeStart.y, pos.y), w: Math.abs(pos.x - shapeStart.x), h: Math.abs(pos.y - shapeStart.y), color, width }
-      } else if (tool === TOOLS.ELLIPSE) {
-        const cx = (shapeStart.x + pos.x) / 2, cy = (shapeStart.y + pos.y) / 2
-        preview = { type: 'ellipse', x: cx, y: cy, rx: Math.abs(pos.x - shapeStart.x) / 2, ry: Math.abs(pos.y - shapeStart.y) / 2, color, width }
-      } else if (tool === TOOLS.LINE) {
-        preview = { type: 'line', x1: shapeStart.x, y1: shapeStart.y, x2: pos.x, y2: pos.y, color, width }
-      } else if (tool === TOOLS.ARROW) {
-        preview = { type: 'arrow', x1: shapeStart.x, y1: shapeStart.y, x2: pos.x, y2: pos.y, color, width }
-      }
-      if (preview) renderAction(ctx, preview)
-    } else if (tool === TOOLS.SELECT && wb.dragState.current) {
-      // Drag/resize logic
-      const drag = wb.dragState.current
-      const init = drag.initialAction
-      const dx = pos.x - drag.startPos.x
-      const dy = pos.y - drag.startPos.y
-      
-      let newAction = { ...init }
-      
-      if (drag.type === 'move') {
-        if (init.type === 'rect' || init.type === 'ellipse' || init.type === 'text') {
-          newAction.x = init.x + dx
-          newAction.y = init.y + dy
-        } else if (init.type === 'line' || init.type === 'arrow') {
-          newAction.x1 = init.x1 + dx
-          newAction.y1 = init.y1 + dy
-          newAction.x2 = init.x2 + dx
-          newAction.y2 = init.y2 + dy
-        } else if (init.type === 'stroke' || init.type === 'erase') {
-          newAction.points = init.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
-        }
-      } else if (drag.type === 'resize') {
-        if (init.type === 'rect') {
-          if (drag.handle.includes('w')) { newAction.x = init.x + dx; newAction.w = init.w - dx }
-          if (drag.handle.includes('e')) newAction.w = init.w + dx
-          if (drag.handle.includes('n')) { newAction.y = init.y + dy; newAction.h = init.h - dy }
-          if (drag.handle.includes('s')) newAction.h = init.h + dy
-          // Fix negative w/h
-          if (newAction.w < 0) { newAction.x += newAction.w; newAction.w = Math.abs(newAction.w) }
-          if (newAction.h < 0) { newAction.y += newAction.h; newAction.h = Math.abs(newAction.h) }
-        } else if (init.type === 'ellipse') {
-          if (drag.handle.includes('w')) { newAction.x = init.x + dx/2; newAction.rx = Math.max(1, init.rx - dx/2) }
-          if (drag.handle.includes('e')) { newAction.x = init.x + dx/2; newAction.rx = Math.max(1, init.rx + dx/2) }
-          if (drag.handle.includes('n')) { newAction.y = init.y + dy/2; newAction.ry = Math.max(1, init.ry - dy/2) }
-          if (drag.handle.includes('s')) { newAction.y = init.y + dy/2; newAction.ry = Math.max(1, init.ry + dy/2) }
-        } else if (init.type === 'line' || init.type === 'arrow') {
-          if (drag.handle === 'p1') { newAction.x1 = init.x1 + dx; newAction.y1 = init.y1 + dy }
-          if (drag.handle === 'p2') { newAction.x2 = init.x2 + dx; newAction.y2 = init.y2 + dy }
-        }
-      }
-      
-      // Update local state directly so it persists
-      wb.updateAction(newAction)
-      
-      // Draw everything on scratch
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      renderAction(ctx, newAction)
-      renderSelectionBounds(ctx, newAction)
-      
-      // Hide from main content canvas temporarily to avoid drawing it twice
-      redrawContent(init.id)
-    }
-
+    wb.handlePointerMove(e, scratchRef.current, contentRef.current)
   }, [wb])
 
   const handlePointerUp = useCallback((e) => {
-    wb.handlePointerUp(e, scratchRef.current)
-    redrawContent() // Ensure it's redrawn on main canvas
-    // Clear scratch after finalizing
-    const canvas = scratchRef.current
-    if (canvas) {
-      const ctx = canvas.getContext('2d')
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
+    wb.handlePointerUp(e, scratchRef.current, contentRef.current, redrawContent)
+  }, [wb, redrawContent])
+
+  const handlePointerLeave = useCallback((e) => {
+    if (e.currentTarget?.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      return
     }
-  }, [wb])
+    if (wb.activeStroke.current || wb.shapeStart.current) {
+      handlePointerUp(e)
+    }
+  }, [wb, handlePointerUp])
 
   const handleDoubleClick = useCallback((e) => {
     wb.handleDoubleClick(e, scratchRef.current)
@@ -215,7 +135,8 @@ export default function WhiteboardCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerUp}
         onDoubleClick={handleDoubleClick}
       />
       <CursorOverlay cursors={cursors} containerRef={containerRef} canvasRef={scratchRef} />

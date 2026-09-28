@@ -1,8 +1,12 @@
 // useWhiteboard.js — Drawing state + action log hook
 
-import { useReducer, useCallback, useRef } from 'react'
+import { useReducer, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import { TOOLS, STICKY_W, STICKY_H, renderAllActions, renderAction, drawGrid, getCanvasPos, hitTestAction, hitTestHandle } from '../../lib/drawingEngine'
+import {
+  TOOLS, STICKY_W, STICKY_H,
+  renderAllActions, renderAction, renderSelectionBounds,
+  drawGrid, getCanvasPos, hitTestAction, hitTestHandle
+} from '../../lib/drawingEngine'
 
 const initialState = {
   actions: [],
@@ -66,6 +70,21 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
   const lastCursorEmit = useRef(0)
   const CURSOR_THROTTLE = 32 // ~30fps
 
+  // Live stroke emission throttle & RAF batching
+  const lastStrokeEmit = useRef(0)
+  const lastEmittedPoint = useRef(null)
+  const pendingStrokePoints = useRef([])
+  const strokeRafId = useRef(null)
+  const shapeRafId = useRef(null)
+
+  // Clean up RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (strokeRafId.current) cancelAnimationFrame(strokeRafId.current)
+      if (shapeRafId.current) cancelAnimationFrame(shapeRafId.current)
+    }
+  }, [])
+
   const setTool  = useCallback(t => dispatch({ type: 'SET_TOOL', payload: t }), [])
   const setColor = useCallback(c => dispatch({ type: 'SET_COLOR', payload: c }), [])
   const setWidth = useCallback(w => dispatch({ type: 'SET_WIDTH', payload: w }), [])
@@ -124,10 +143,12 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
   }, [emit])
 
   // Called on every pointer down on canvas
-  const handlePointerDown = useCallback((e, canvas) => {
+  const handlePointerDown = useCallback((e, canvas, contentCanvas) => {
     const { tool, color, width, fontSize } = stateRef.current
     const pos = getCanvasPos(e, canvas)
-    canvas.setPointerCapture(e.pointerId)
+    if (canvas && canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId) } catch (err) {}
+    }
 
     if (tool === TOOLS.PEN || tool === TOOLS.ERASER) {
       const actionId = uuidv4()
@@ -139,12 +160,39 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
         width: tool === TOOLS.ERASER ? width * 3 : width,
         userId: userIdRef.current,
         ts: Date.now(),
+        _inProgress: true,
       }
       activeStroke.current = action
+      lastStrokeEmit.current = performance.now()
+      lastEmittedPoint.current = pos
+      pendingStrokePoints.current = [pos]
+
+      // 1. Immediately add to action log/state as in-progress action
+      dispatch({ type: 'ADD_ACTION', payload: action })
       emit('draw:start', { actionId, point: pos, color: action.color, width: action.width, tool })
+
+      // Immediately draw the first point on the content canvas
+      if (contentCanvas) {
+        const ctx = contentCanvas.getContext('2d')
+        ctx.save()
+        if (action.type === 'erase') {
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.fillStyle = 'rgba(0,0,0,1)'
+        } else {
+          ctx.fillStyle = action.color
+        }
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, action.width / 2, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
 
     } else if (tool === TOOLS.RECT || tool === TOOLS.ELLIPSE || tool === TOOLS.LINE || tool === TOOLS.ARROW) {
       shapeStart.current = { ...pos, color, width }
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
 
     } else if (tool === TOOLS.TEXT) {
       showTextInput(pos, color, fontSize, canvas)
@@ -154,8 +202,6 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
 
     } else if (tool === TOOLS.SELECT) {
       const { actions, selectedId } = stateRef.current
-      
-      // 1. Check if clicking on resize handles of currently selected object
       if (selectedId) {
         const selObj = actions.find(a => a.id === selectedId)
         if (selObj) {
@@ -166,8 +212,6 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
           }
         }
       }
-
-      // 2. Find topmost action to select/move
       let hitId = null
       for (let i = actions.length - 1; i >= 0; i--) {
         if (hitTestAction(actions[i], pos.x, pos.y)) {
@@ -176,7 +220,6 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
           break
         }
       }
-      
       if (hitId !== selectedId) {
         dispatch({ type: 'SET_SELECTED', payload: hitId })
       }
@@ -186,19 +229,167 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
     }
   }, [userIdRef, emit])
 
-  const handlePointerMove = useCallback((e, canvas) => {
-    const { tool } = stateRef.current
+  const handlePointerMove = useCallback((e, canvas, contentCanvas) => {
+    const { tool, color, width } = stateRef.current
     const pos = getCanvasPos(e, canvas)
 
     if (tool === TOOLS.PEN || tool === TOOLS.ERASER) {
       if (!activeStroke.current) return
-      activeStroke.current.points.push(pos)
-      socketRef?.current?.emit('draw:move', { actionId: activeStroke.current.id, point: pos })
+      const pts = activeStroke.current.points
+      const prevPoint = pts[pts.length - 1]
+      if (prevPoint.x === pos.x && prevPoint.y === pos.y) return
 
-    } else if (shapeStart.current) {
-      // Will be rendered on scratch canvas by WhiteboardCanvas
+      // Append new point to in-progress stroke
+      pts.push(pos)
+      pendingStrokePoints.current.push(pos)
+
+      // 2. Batch newest segment drawing with requestAnimationFrame
+      if (!strokeRafId.current) {
+        strokeRafId.current = requestAnimationFrame(() => {
+          strokeRafId.current = null
+          if (!contentCanvas || !activeStroke.current) return
+          const newPts = pendingStrokePoints.current
+          if (newPts.length === 0) return
+          pendingStrokePoints.current = []
+
+          const allPoints = activeStroke.current.points
+          const firstNewIdx = allPoints.indexOf(newPts[0])
+          const startIdx = Math.max(0, firstNewIdx - 1)
+
+          const ctx = contentCanvas.getContext('2d')
+          ctx.save()
+          if (activeStroke.current.type === 'erase') {
+            ctx.globalCompositeOperation = 'destination-out'
+            ctx.strokeStyle = 'rgba(0,0,0,1)'
+          } else {
+            ctx.strokeStyle = activeStroke.current.color
+          }
+          ctx.lineWidth = activeStroke.current.width
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.beginPath()
+          ctx.moveTo(allPoints[startIdx].x, allPoints[startIdx].y)
+          for (let i = startIdx + 1; i < allPoints.length; i++) {
+            ctx.lineTo(allPoints[i].x, allPoints[i].y)
+          }
+          ctx.stroke()
+          ctx.restore()
+        })
+      }
+
+      // 6. Throttled draw:move socket emits (about every 16-30ms)
+      const now = performance.now()
+      if (now - lastStrokeEmit.current >= 20) {
+        lastStrokeEmit.current = now
+        lastEmittedPoint.current = pos
+        socketRef?.current?.emit('draw:move', { actionId: activeStroke.current.id, point: pos })
+      }
+
+    } else if (shapeStart.current && (tool === TOOLS.RECT || tool === TOOLS.ELLIPSE || tool === TOOLS.LINE || tool === TOOLS.ARROW)) {
+      // 5. Shape live preview while dragging (batched with rAF)
+      if (!shapeRafId.current) {
+        shapeRafId.current = requestAnimationFrame(() => {
+          shapeRafId.current = null
+          if (!canvas || !shapeStart.current) return
+          const ctx = canvas.getContext('2d')
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+          const sx = shapeStart.current.x
+          const sy = shapeStart.current.y
+          let preview = null
+
+          if (tool === TOOLS.RECT) {
+            preview = {
+              type: 'rect',
+              x: Math.min(sx, pos.x),
+              y: Math.min(sy, pos.y),
+              w: Math.abs(pos.x - sx),
+              h: Math.abs(pos.y - sy),
+              color,
+              width,
+            }
+          } else if (tool === TOOLS.ELLIPSE) {
+            const cx = (sx + pos.x) / 2
+            const cy = (sy + pos.y) / 2
+            preview = {
+              type: 'ellipse',
+              x: cx,
+              y: cy,
+              rx: Math.abs(pos.x - sx) / 2,
+              ry: Math.abs(pos.y - sy) / 2,
+              color,
+              width,
+            }
+          } else if (tool === TOOLS.LINE) {
+            preview = {
+              type: 'line',
+              x1: sx,
+              y1: sy,
+              x2: pos.x,
+              y2: pos.y,
+              color,
+              width,
+            }
+          } else if (tool === TOOLS.ARROW) {
+            preview = {
+              type: 'arrow',
+              x1: sx,
+              y1: sy,
+              x2: pos.x,
+              y2: pos.y,
+              color,
+              width,
+            }
+          }
+          if (preview) renderAction(ctx, preview)
+        })
+      }
+
     } else if (tool === TOOLS.SELECT && dragState.current) {
-      // Logic runs in WhiteboardCanvas on scratch to avoid React state thrashing
+      const drag = dragState.current
+      const init = drag.initialAction
+      const dx = pos.x - drag.startPos.x
+      const dy = pos.y - drag.startPos.y
+      let newAction = { ...init }
+
+      if (drag.type === 'move') {
+        if (init.type === 'rect' || init.type === 'ellipse' || init.type === 'text') {
+          newAction.x = init.x + dx
+          newAction.y = init.y + dy
+        } else if (init.type === 'line' || init.type === 'arrow') {
+          newAction.x1 = init.x1 + dx
+          newAction.y1 = init.y1 + dy
+          newAction.x2 = init.x2 + dx
+          newAction.y2 = init.y2 + dy
+        } else if (init.type === 'stroke' || init.type === 'erase') {
+          newAction.points = init.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+        }
+      } else if (drag.type === 'resize') {
+        if (init.type === 'rect') {
+          if (drag.handle.includes('w')) { newAction.x = init.x + dx; newAction.w = init.w - dx }
+          if (drag.handle.includes('e')) newAction.w = init.w + dx
+          if (drag.handle.includes('n')) { newAction.y = init.y + dy; newAction.h = init.h - dy }
+          if (drag.handle.includes('s')) newAction.h = init.h + dy
+          if (newAction.w < 0) { newAction.x += newAction.w; newAction.w = Math.abs(newAction.w) }
+          if (newAction.h < 0) { newAction.y += newAction.h; newAction.h = Math.abs(newAction.h) }
+        } else if (init.type === 'ellipse') {
+          if (drag.handle.includes('w')) { newAction.x = init.x + dx/2; newAction.rx = Math.max(1, init.rx - dx/2) }
+          if (drag.handle.includes('e')) { newAction.x = init.x + dx/2; newAction.rx = Math.max(1, init.rx + dx/2) }
+          if (drag.handle.includes('n')) { newAction.y = init.y + dy/2; newAction.ry = Math.max(1, init.ry - dy/2) }
+          if (drag.handle.includes('s')) { newAction.y = init.y + dy/2; newAction.ry = Math.max(1, init.ry + dy/2) }
+        } else if (init.type === 'line' || init.type === 'arrow') {
+          if (drag.handle === 'p1') { newAction.x1 = init.x1 + dx; newAction.y1 = init.y1 + dy }
+          if (drag.handle === 'p2') { newAction.x2 = init.x2 + dx; newAction.y2 = init.y2 + dy }
+        }
+      }
+
+      updateAction(newAction)
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        renderAction(ctx, newAction)
+        renderSelectionBounds(ctx, newAction)
+      }
     }
 
     // Throttled cursor broadcast
@@ -207,67 +398,151 @@ export function useWhiteboard(socketRef, userIdRef, canvasRefs) {
       lastCursorEmit.current = now
       socketRef?.current?.emit('cursor:move', { x: pos.x, y: pos.y })
     }
-  }, [socketRef])
+  }, [socketRef, updateAction])
 
-  const handlePointerUp = useCallback((e, canvas) => {
-    const { tool, color, width } = stateRef.current
+  const handlePointerUp = useCallback((e, canvas, contentCanvas, redrawContent) => {
+    if (canvas && canvas.releasePointerCapture) {
+      try {
+        if (canvas.hasPointerCapture(e.pointerId)) {
+          canvas.releasePointerCapture(e.pointerId)
+        }
+      } catch (err) {}
+    }
+
+    const { tool } = stateRef.current
     const pos = getCanvasPos(e, canvas)
 
     if (tool === TOOLS.PEN || tool === TOOLS.ERASER) {
       if (!activeStroke.current) return
-      const action = { ...activeStroke.current }
+
+      // Flush any pending points before finishing
+      if (strokeRafId.current) {
+        cancelAnimationFrame(strokeRafId.current)
+        strokeRafId.current = null
+      }
+      if (contentCanvas && pendingStrokePoints.current.length > 0) {
+        const newPts = pendingStrokePoints.current
+        pendingStrokePoints.current = []
+        const allPoints = activeStroke.current.points
+        const firstNewIdx = allPoints.indexOf(newPts[0])
+        const startIdx = Math.max(0, firstNewIdx - 1)
+
+        const ctx = contentCanvas.getContext('2d')
+        ctx.save()
+        if (activeStroke.current.type === 'erase') {
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.strokeStyle = 'rgba(0,0,0,1)'
+        } else {
+          ctx.strokeStyle = activeStroke.current.color
+        }
+        ctx.lineWidth = activeStroke.current.width
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(allPoints[startIdx].x, allPoints[startIdx].y)
+        for (let i = startIdx + 1; i < allPoints.length; i++) {
+          ctx.lineTo(allPoints[i].x, allPoints[i].y)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Ensure final point is emitted
+      const pts = activeStroke.current.points
+      const lastPoint = pts[pts.length - 1]
+      if (lastEmittedPoint.current !== lastPoint) {
+        socketRef?.current?.emit('draw:move', { actionId: activeStroke.current.id, point: lastPoint })
+        lastEmittedPoint.current = lastPoint
+      }
+
+      // 3. Finalize the stroke: mark complete, push to undo stack (clear redoStack)
+      const finalized = { ...activeStroke.current, _inProgress: false }
       activeStroke.current = null
-      addAction(action)
-      emit('draw:end', { actionId: action.id })
+      redoStack.current = []
+      updateAction(finalized)
+      emit('draw:end', { actionId: finalized.id })
+      redrawContent?.()
 
-    } else if (tool === TOOLS.RECT && shapeStart.current) {
+    } else if (shapeStart.current && (tool === TOOLS.RECT || tool === TOOLS.ELLIPSE || tool === TOOLS.LINE || tool === TOOLS.ARROW)) {
+      if (shapeRafId.current) {
+        cancelAnimationFrame(shapeRafId.current)
+        shapeRafId.current = null
+      }
+
       const { x: sx, y: sy, color: sc, width: sw } = shapeStart.current
-      const action = {
-        id: uuidv4(), type: 'rect',
-        x: Math.min(sx, pos.x), y: Math.min(sy, pos.y),
-        w: Math.abs(pos.x - sx), h: Math.abs(pos.y - sy),
-        color: sc, width: sw, fill: false, userId: userIdRef.current, ts: Date.now(),
-      }
-      shapeStart.current = null
-      addAction(action)
-      emit('shape:add', { action })
+      let action = null
 
-    } else if (tool === TOOLS.ELLIPSE && shapeStart.current) {
-      const { x: sx, y: sy } = shapeStart.current
-      const cx = (sx + pos.x) / 2, cy = (sy + pos.y) / 2
-      const action = {
-        id: uuidv4(), type: 'ellipse',
-        x: cx, y: cy,
-        rx: Math.abs(pos.x - sx) / 2, ry: Math.abs(pos.y - sy) / 2,
-        color, width, fill: false, userId: userIdRef.current, ts: Date.now(),
+      if (tool === TOOLS.RECT) {
+        action = {
+          id: uuidv4(),
+          type: 'rect',
+          x: Math.min(sx, pos.x),
+          y: Math.min(sy, pos.y),
+          w: Math.abs(pos.x - sx),
+          h: Math.abs(pos.y - sy),
+          color: sc,
+          width: sw,
+          fill: false,
+          userId: userIdRef.current,
+          ts: Date.now(),
+        }
+      } else if (tool === TOOLS.ELLIPSE) {
+        const cx = (sx + pos.x) / 2
+        const cy = (sy + pos.y) / 2
+        action = {
+          id: uuidv4(),
+          type: 'ellipse',
+          x: cx,
+          y: cy,
+          rx: Math.abs(pos.x - sx) / 2,
+          ry: Math.abs(pos.y - sy) / 2,
+          color: sc,
+          width: sw,
+          fill: false,
+          userId: userIdRef.current,
+          ts: Date.now(),
+        }
+      } else if (tool === TOOLS.LINE || tool === TOOLS.ARROW) {
+        action = {
+          id: uuidv4(),
+          type: tool,
+          x1: sx,
+          y1: sy,
+          x2: pos.x,
+          y2: pos.y,
+          color: sc,
+          width: sw,
+          userId: userIdRef.current,
+          ts: Date.now(),
+        }
       }
-      shapeStart.current = null
-      addAction(action)
-      emit('shape:add', { action })
 
-    } else if ((tool === TOOLS.LINE || tool === TOOLS.ARROW) && shapeStart.current) {
-      const { x: sx, y: sy } = shapeStart.current
-      const action = {
-        id: uuidv4(), type: tool,
-        x1: sx, y1: sy, x2: pos.x, y2: pos.y,
-        color, width, userId: userIdRef.current, ts: Date.now(),
-      }
       shapeStart.current = null
-      addAction(action)
-      emit('shape:add', { action })
-      
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+
+      if (action) {
+        addAction(action)
+        emit('shape:add', { action })
+      }
+      redrawContent?.()
+
     } else if (tool === TOOLS.SELECT && dragState.current) {
-      // The drag has ended, emit the final updated action to the network
-      // (The action was continuously updated locally in WhiteboardCanvas pointerMove, 
-      // but we wait till pointerUp to sync to everyone)
       const sel = stateRef.current.actions.find(a => a.id === stateRef.current.selectedId)
       if (sel) {
         socketRef?.current?.emit('action:update', { actionId: sel.id, patch: sel })
       }
       dragState.current = null
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        if (sel) renderSelectionBounds(ctx, sel)
+      }
+      redrawContent?.()
     }
-
-  }, [userIdRef, emit, addAction])
+  }, [userIdRef, emit, updateAction, addAction])
 
   // Double-click: edit existing text or sticky note
   const handleDoubleClick = useCallback((e, canvas) => {
