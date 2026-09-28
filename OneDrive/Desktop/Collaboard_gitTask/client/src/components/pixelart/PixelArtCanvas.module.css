@@ -1,0 +1,23 @@
+/* PixelArtCanvas.module.css */
+.container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0D1117;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  overflow: auto;
+  padding: 24px;
+}
+
+.canvasWrapper {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 20px 60px rgba(0,0,0,0.8);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.canvas {
+  display: block;
+  image-rendering: pixelated;
+}

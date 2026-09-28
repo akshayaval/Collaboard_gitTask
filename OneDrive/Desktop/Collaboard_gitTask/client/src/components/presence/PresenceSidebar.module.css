@@ -1,0 +1,171 @@
+/* PresenceSidebar.module.css */
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.95);
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.roomCode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.codeBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+.codeBtn:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.code {
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  flex: 1;
+}
+
+.divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.07);
+  margin: 10px 0;
+  flex-shrink: 0;
+}
+
+.usersSection {
+  flex-shrink: 0;
+  max-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+.userList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 130px;
+  padding-right: 2px;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.userRow:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: white;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.userName {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1e293b;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.meBadge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 1px 4px;
+  border-radius: 100px;
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+/* Typing badge next to username in participants list */
+.typingBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(37, 99, 235, 0.09);
+  padding: 2px 5px;
+  border-radius: 6px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.typingBadgeDot {
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: typingBadgeBounce 1.2s infinite ease-in-out;
+}
+
+@keyframes typingBadgeBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+/* Chat section replacing voice controls */
+.chatSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
