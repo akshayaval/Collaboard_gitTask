@@ -1,6 +1,5 @@
-// socketHandlers.js — All Socket.io event handlers
-
 const rm = require('./roomManager');
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = function registerHandlers(io, socket) {
   let currentRoomId = null;
@@ -104,28 +103,48 @@ module.exports = function registerHandlers(io, socket) {
     socket.to(currentRoomId).emit('cursor:move', { userId: socket.id, x, y });
   });
 
-  // ── VOICE / WebRTC SIGNALING ───────────────────────────────────────────────
-  socket.on('voice:offer', ({ to, offer }) => {
-    io.to(to).emit('voice:offer', { from: socket.id, offer });
+  // ── CHAT ───────────────────────────────────────────────────────────────────
+  socket.on('chat:message', (payload) => {
+    if (!currentRoomId || !payload || typeof payload.text !== 'string') return;
+    const text = payload.text.trim();
+    if (!text) return;
+    const cappedText = text.slice(0, 500);
+
+    const room = rm.getRoom(currentRoomId);
+    if (!room) return;
+    const user = room.users.get(socket.id);
+    const name = user ? user.name : 'Anonymous';
+    const color = user ? user.color : '#60A5FA';
+
+    const message = {
+      id: uuidv4(),
+      userId: socket.id,
+      name,
+      color,
+      text: cappedText,
+      ts: Date.now(),
+    };
+
+    rm.addMessage(currentRoomId, message);
+    io.to(currentRoomId).emit('chat:message', message);
   });
 
-  socket.on('voice:answer', ({ to, answer }) => {
-    io.to(to).emit('voice:answer', { from: socket.id, answer });
-  });
-
-  socket.on('voice:ice', ({ to, candidate }) => {
-    io.to(to).emit('voice:ice', { from: socket.id, candidate });
-  });
-
-  socket.on('voice:speaking', ({ isSpeaking }) => {
-    if (!currentRoomId) return;
-    rm.updateUserSpeaking(currentRoomId, socket.id, isSpeaking);
-    socket.to(currentRoomId).emit('voice:speaking', { userId: socket.id, isSpeaking });
+  socket.on('chat:typing', (payload) => {
+    if (!currentRoomId || !payload) return;
+    const isTyping = Boolean(payload.isTyping);
+    socket.to(currentRoomId).emit('chat:typing', {
+      userId: socket.id,
+      isTyping,
+    });
   });
 
   // ── DISCONNECT ─────────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     if (!currentRoomId) return;
+    socket.to(currentRoomId).emit('chat:typing', {
+      userId: socket.id,
+      isTyping: false,
+    });
     const remainingRoom = rm.removeUser(currentRoomId, socket.id);
     if (remainingRoom !== null) {
       io.to(currentRoomId).emit('room:users', rm.getUsersArray(currentRoomId));

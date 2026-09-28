@@ -7,7 +7,7 @@ let socketInstance = null
 
 function getSocket() {
   if (!socketInstance) {
-    socketInstance = io('http://localhost:3001', {
+    socketInstance = io(import.meta.env.VITE_SOCKET_URL || undefined, {
       transports: ['websocket'],
       autoConnect: false,
     })

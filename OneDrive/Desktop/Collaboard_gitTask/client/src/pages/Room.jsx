@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 
 import { useWhiteboard } from '../components/whiteboard/useWhiteboard'
-import { useVoiceChat } from '../components/presence/useVoiceChat'
+import { useChat } from '../components/chat/useChat'
 import { useToast } from '../components/ui/ToastProvider'
 
 import WhiteboardCanvas from '../components/whiteboard/WhiteboardCanvas'
@@ -15,7 +15,7 @@ import ExportModal from '../components/ui/ExportModal'
 
 import styles from './Room.module.css'
 
-const SOCKET_URL = 'http://localhost:3001'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined
 
 export default function Room() {
   const { roomId } = useParams()
@@ -39,7 +39,6 @@ export default function Room() {
 
   // -- Shared room state -----------------------------------------------------
   const [users, setUsers] = useState([])
-  const [speaking, setSpeaking] = useState(new Map())
   const [showExport, setShowExport] = useState(false)
 
   // -- Cursors ---------------------------------------------------------------
@@ -51,21 +50,8 @@ export default function Room() {
   // -- Whiteboard hook -------------------------------------------------------
   const wb = useWhiteboard(socketRef, userId, wbCanvasRefs)
 
-  // -- Voice chat hook -------------------------------------------------------
-  const handleSpeaking = useCallback((uid, isSpeaking) => {
-    setSpeaking(prev => {
-      const next = new Map(prev)
-      next.set(uid, isSpeaking)
-      return next
-    })
-  }, [])
-
-  const voice = useVoiceChat(
-    socketRef,
-    userId,
-    users,
-    handleSpeaking,
-  )
+  // -- Chat hook -------------------------------------------------------------
+  const chat = useChat(socketRef, userId)
 
   // -- Socket setup + room join ----------------------------------------------
   useEffect(() => {
@@ -101,7 +87,6 @@ export default function Room() {
 
     socket.on('room:user_joined', (user) => {
       toast(`${user.name} joined the room`, 'join')
-      if (voice.isEnabled.current) voice.connectToPeer(user.id)
     })
 
     socket.on('room:user_left', ({ userId: leftId }) => {
@@ -150,11 +135,6 @@ export default function Room() {
         next.set(uid, { x, y, name: user?.name || '?', color: user?.color || '#60A5FA' })
         return next
       })
-    })
-
-    // Voice speaking indicator
-    socket.on('voice:speaking', ({ userId: uid, isSpeaking }) => {
-      handleSpeaking(uid, isSpeaking)
     })
 
     return () => {
@@ -310,9 +290,8 @@ export default function Room() {
         <PresenceSidebar
           users={users}
           currentUserId={userId.current}
-          speaking={speaking}
-          voice={voice}
           roomId={roomId}
+          chat={chat}
         />
       </div>
 

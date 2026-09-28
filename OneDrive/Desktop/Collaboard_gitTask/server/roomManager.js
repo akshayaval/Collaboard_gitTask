@@ -10,6 +10,7 @@ function getOrCreateRoom(roomId) {
       roomId,
       users: new Map(), // socketId -> user object
       whiteboard: { actions: [] },
+      messages: [], // last 100 messages
     });
   }
   return rooms.get(roomId);
@@ -22,7 +23,6 @@ function addUser(roomId, socketId, userData) {
     name: userData.name || 'Anonymous',
     color: userData.color || '#60A5FA',
     cursor: { x: 0, y: 0 },
-    isSpeaking: false,
   };
   room.users.set(socketId, user);
   return user;
@@ -53,7 +53,19 @@ function getRoomSnapshot(roomId) {
     whiteboard: {
       actions: room.whiteboard.actions,
     },
+    messages: room.messages || [],
   };
+}
+
+function addMessage(roomId, message) {
+  const room = rooms.get(roomId);
+  if (!room) return null;
+  if (!room.messages) room.messages = [];
+  room.messages.push(message);
+  if (room.messages.length > 100) {
+    room.messages.shift();
+  }
+  return message;
 }
 
 function addWhiteboardAction(roomId, action) {
@@ -91,19 +103,11 @@ function undoUserAction(roomId, userId) {
   return null;
 }
 
-
 function updateUserCursor(roomId, socketId, cursor) {
   const room = rooms.get(roomId);
   if (!room) return;
   const user = room.users.get(socketId);
   if (user) user.cursor = cursor;
-}
-
-function updateUserSpeaking(roomId, socketId, isSpeaking) {
-  const room = rooms.get(roomId);
-  if (!room) return;
-  const user = room.users.get(socketId);
-  if (user) user.isSpeaking = isSpeaking;
 }
 
 function getUsersArray(roomId) {
@@ -147,12 +151,12 @@ module.exports = {
   removeUser,
   getRoom,
   getRoomSnapshot,
+  addMessage,
   addWhiteboardAction,
   updateWhiteboardAction,
   clearWhiteboardActions,
   undoUserAction,
   updateUserCursor,
-  updateUserSpeaking,
   getUsersArray,
   startStroke,
   appendStrokePoint,
