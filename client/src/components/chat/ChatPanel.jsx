@@ -95,6 +95,18 @@ export default function ChatPanel({
           </div>
         ) : (
           messages.map((msg) => {
+            // ── System message (game notices, correct-guess confirmations) ──
+            if (msg.userId === '__system__') {
+              return (
+                <div
+                  key={msg.id || `${msg.ts}-system`}
+                  className={`${styles.systemMsg} ${msg.correct ? styles.systemMsgCorrect : styles.systemMsgGame}`}
+                >
+                  {msg.text}
+                </div>
+              )
+            }
+
             const isMe = msg.userId === currentUserId
             const initial = (msg.name?.[0] || '?').toUpperCase()
 

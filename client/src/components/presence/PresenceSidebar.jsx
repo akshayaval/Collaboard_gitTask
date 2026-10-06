@@ -9,10 +9,32 @@ export default function PresenceSidebar({
   currentUserId,
   roomId,
   chat,
+  hideSidebar = false, // when true, show chat only (used in Skribble mode)
 }) {
   const copyRoomCode = useCallback(() => {
     navigator.clipboard.writeText(roomId).catch(() => {})
   }, [roomId])
+
+  // Chat-only mode (used in Skribble right panel)
+  if (hideSidebar) {
+    return (
+      <div className={styles.sidebar} style={{ width: '100%', border: 'none' }}>
+        <div className={styles.chatHeader}>
+          <span className="label-xs">Guess Chat</span>
+        </div>
+        <div className={styles.chatSection} style={{ flex: 1 }}>
+          <ChatPanel
+            messages={chat?.messages}
+            typingUsers={chat?.typingUsers}
+            sendMessage={chat?.sendMessage}
+            setTyping={chat?.setTyping}
+            currentUserId={currentUserId}
+            users={users}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.sidebar}>

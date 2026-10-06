@@ -9,10 +9,11 @@ import CursorOverlay from './CursorOverlay'
 import styles from './WhiteboardCanvas.module.css'
 
 export default function WhiteboardCanvas({
-  wb,           // useWhiteboard hook state + handlers
+  wb,             // useWhiteboard hook state + handlers
   userId,
-  cursors,      // Map<userId, {x,y,name,color}>
-  canvasRefs,   // { grid, content, scratch } — exposed to parent for export
+  cursors,        // Map<userId, {x,y,name,color}>
+  canvasRefs,     // { grid, content, scratch } — exposed to parent for export
+  drawingDisabled, // when true (Skribble observer), all draw interactions are blocked
 }) {
   const gridRef    = useRef(null)
   const contentRef = useRef(null)
@@ -88,32 +89,38 @@ export default function WhiteboardCanvas({
 
   // ── Pointer events ────────────────────────────────────────────────────────
   const handlePointerDown = useCallback((e) => {
+    if (drawingDisabled) return
     if (e.button !== 0 && e.pointerType === 'mouse') return
     wb.handlePointerDown(e, scratchRef.current, contentRef.current)
-  }, [wb])
+  }, [wb, drawingDisabled])
 
   const handlePointerMove = useCallback((e) => {
+    if (drawingDisabled) return
     wb.handlePointerMove(e, scratchRef.current, contentRef.current)
-  }, [wb])
+  }, [wb, drawingDisabled])
 
   const handlePointerUp = useCallback((e) => {
+    if (drawingDisabled) return
     wb.handlePointerUp(e, scratchRef.current, contentRef.current, redrawContent)
-  }, [wb, redrawContent])
+  }, [wb, redrawContent, drawingDisabled])
 
   const handlePointerLeave = useCallback((e) => {
+    if (drawingDisabled) return
     if (e.currentTarget?.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) {
       return
     }
     if (wb.activeStroke.current || wb.shapeStart.current) {
       handlePointerUp(e)
     }
-  }, [wb, handlePointerUp])
+  }, [wb, handlePointerUp, drawingDisabled])
 
   const handleDoubleClick = useCallback((e) => {
+    if (drawingDisabled) return
     wb.handleDoubleClick(e, scratchRef.current)
-  }, [wb])
+  }, [wb, drawingDisabled])
 
   const getCursorStyle = () => {
+    if (drawingDisabled) return 'not-allowed'
     switch (wb.state.tool) {
       case TOOLS.PEN:    return 'crosshair'
       case TOOLS.ERASER: return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' stroke='white' stroke-width='2' fill='rgba(0,0,0,0.5)'/%3E%3C/svg%3E") 12 12, crosshair`

@@ -1,4 +1,4 @@
-// Landing.jsx -- Room entry page -- redesigned to match reference UI
+// Landing.jsx -- Room entry page with Collaboard / Skribble mode selection
 
 import React, { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -12,11 +12,13 @@ const PRESET_COLORS = [
 
 export default function Landing() {
   const navigate = useNavigate()
-  const [name, setName] = useState('')
-  const [color, setColor] = useState(PRESET_COLORS[0])
+  const [name, setName]           = useState('')
+  const [color, setColor]         = useState(PRESET_COLORS[0])
   const [roomInput, setRoomInput] = useState('')
-  const [tab, setTab] = useState('create')
-  const [error, setError] = useState('')
+  const [tab, setTab]             = useState('create')
+  const [error, setError]         = useState('')
+  const [gameMode, setGameMode]   = useState('freeform')  // 'freeform' | 'skribble'
+  const [totalRounds, setTotalRounds] = useState(3)
 
   const saveSession = (data) => {
     sessionStorage.setItem('collaboard_user', JSON.stringify(data))
@@ -25,9 +27,9 @@ export default function Landing() {
   const handleCreate = useCallback(() => {
     if (!name.trim()) { setError('Please enter your name'); return }
     const roomId = uuidv4().slice(0, 8).toUpperCase()
-    saveSession({ name: name.trim(), color })
-    navigate(`/room/${roomId}`)
-  }, [name, color, navigate])
+    saveSession({ name: name.trim(), color, gameMode, totalRounds })
+    navigate(`/room/${roomId}`, { state: { gameMode, totalRounds } })
+  }, [name, color, navigate, gameMode, totalRounds])
 
   const handleJoin = useCallback(() => {
     if (!name.trim()) { setError('Please enter your name'); return }
@@ -194,9 +196,60 @@ export default function Landing() {
             </div>
 
             {tab === 'create' ? (
-              <button className={styles.ctaButton} onClick={handleCreate}>
-                Start Collaboarding
-              </button>
+              <>
+                {/* Mode toggle */}
+                <div className={styles.modeToggle}>
+                  <button
+                    id="mode-collaboard"
+                    className={`${styles.modeBtn} ${gameMode === 'freeform' ? styles.modeBtnActive : ''}`}
+                    onClick={() => setGameMode('freeform')}
+                    type="button"
+                  >
+                    <span className={styles.modeIcon}>🎨</span>
+                    <span className={styles.modeName}>Collaboard</span>
+                    <span className={styles.modeDesc}>Freeform whiteboard</span>
+                  </button>
+                  <button
+                    id="mode-skribble"
+                    className={`${styles.modeBtn} ${gameMode === 'skribble' ? styles.modeBtnSkribble : ''}`}
+                    onClick={() => setGameMode('skribble')}
+                    type="button"
+                  >
+                    <span className={styles.modeIcon}>✏️</span>
+                    <span className={styles.modeName}>Skribble</span>
+                    <span className={styles.modeDesc}>Drawing &amp; guessing game</span>
+                  </button>
+                </div>
+
+                {/* Rounds selector — only shown for Skribble */}
+                {gameMode === 'skribble' && (
+                  <div className={styles.roundsRow}>
+                    <label className={styles.roundsLabel} htmlFor="rounds-input">
+                      Rounds per player
+                    </label>
+                    <div className={styles.roundsControls}>
+                      <button
+                        type="button"
+                        className={styles.roundsBtn}
+                        onClick={() => setTotalRounds(r => Math.max(1, r - 1))}
+                        aria-label="Decrease rounds"
+                      >−</button>
+                      <span id="rounds-input" className={styles.roundsValue}>{totalRounds}</span>
+                      <button
+                        type="button"
+                        className={styles.roundsBtn}
+                        onClick={() => setTotalRounds(r => Math.min(10, r + 1))}
+                        aria-label="Increase rounds"
+                      >+</button>
+                    </div>
+                    <span className={styles.roundsHint}>Each player draws {totalRounds} time{totalRounds !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+
+                <button className={styles.ctaButton} onClick={handleCreate}>
+                  {gameMode === 'skribble' ? '🎮 Start Skribble Game' : 'Start Collaboarding'}
+                </button>
+              </>
             ) : (
               <div className={styles.joinRow}>
                 <input

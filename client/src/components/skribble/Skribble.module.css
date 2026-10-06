@@ -1,0 +1,638 @@
+/* Skribble.module.css — Styles for all Skribble game components */
+
+/* ── Shared Modal ──────────────────────────────────────────────────────────── */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInBd 0.2s ease forwards;
+}
+
+@keyframes fadeInBd {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0,0,0,0.06);
+  animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* WordChoice modal specifics */
+.modalHeader {
+  text-align: center;
+}
+
+.modalEmoji {
+  font-size: 2.5rem;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.modalTitle {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+}
+
+.modalSubtitle {
+  font-size: 0.82rem;
+  color: #64748B;
+  margin-top: 4px;
+}
+
+/* Countdown ring */
+.countdownRing {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  transition: border-color 0.3s ease;
+}
+
+.countdownOk      { border-color: #10B981; color: #10B981; }
+.countdownWarning { border-color: #F59E0B; color: #F59E0B; animation: urgentPulse 0.8s ease-in-out infinite; }
+.countdownUrgent  { border-color: #EF4444; color: #EF4444; animation: urgentPulse 0.4s ease-in-out infinite; }
+
+@keyframes urgentPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.06); }
+}
+
+.countdownNum {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.countdownSuffix {
+  font-size: 0.65rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* Word choice buttons */
+.wordChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.wordChoiceBtn {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%);
+  border: 2px solid rgba(99, 102, 241, 0.2);
+  color: #1E40AF;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-transform: lowercase;
+}
+
+.wordChoiceBtn:hover {
+  background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+}
+
+.autoPickNote {
+  font-size: 0.75rem;
+  color: #94A3B8;
+  text-align: center;
+}
+
+/* ── Game Banner ───────────────────────────────────────────────────────────── */
+.banner {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  flex-shrink: 0;
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+
+.bannerDrawing {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-bottom-color: rgba(99, 102, 241, 0.15);
+}
+
+.bannerRoundEnd {
+  background: rgba(249, 250, 251, 0.98);
+}
+
+.bannerWaiting {
+  font-size: 0.875rem;
+  color: #64748B;
+  font-style: italic;
+}
+
+.bannerChoosing {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  flex: 1;
+}
+
+.bannerLeft {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bannerRight {
+  flex-shrink: 0;
+}
+
+.bannerYourTurn {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #2563EB;
+}
+
+.bannerOtherTurn {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.bannerRound {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #94A3B8;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Word blanks */
+.wordBlanks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.wordBlank {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 20px;
+  height: 28px;
+  border-bottom: 2.5px solid #3B82F6;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.wordSpace {
+  display: inline-block;
+  width: 12px;
+}
+
+/* Timer */
+.timerWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.timerRing {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3.5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.5s ease;
+}
+
+.timerNum {
+  font-size: 0.95rem;
+  font-weight: 800;
+  transition: color 0.5s ease;
+}
+
+.timerLabel {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #94A3B8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bannerRoundEndText {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #7C3AED;
+}
+
+/* ── Scoreboard ────────────────────────────────────────────────────────────── */
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.98);
+  border-left: 1px solid rgba(0, 0, 0, 0.07);
+  width: 200px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.scoreboardHeader {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.scoreboardTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.scoreList {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+}
+
+.scoreRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  transition: background 0.15s;
+}
+
+.scoreRow:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.scoreRowMe {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.scoreRank {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94A3B8;
+  min-width: 20px;
+  text-align: center;
+}
+
+.scoreAvatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.scoreName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scoreNameText {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crownIcon {
+  margin-left: 3px;
+  font-size: 0.7rem;
+  animation: crownBounce 1s ease-in-out infinite;
+}
+
+@keyframes crownBounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-2px); }
+}
+
+.drawerBadge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #7C3AED;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.scorePoints {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 28px;
+  text-align: right;
+}
+
+.scoreEmpty {
+  padding: 16px 12px;
+  font-size: 0.78rem;
+  color: #94A3B8;
+  text-align: center;
+}
+
+/* ── Winner Modal ──────────────────────────────────────────────────────────── */
+.winnerModal {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 0;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.06);
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  display: flex;
+  flex-direction: column;
+}
+
+.winnerHeader {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 36px 32px 28px;
+  text-align: center;
+  border-radius: 24px 24px 0 0;
+  color: white;
+}
+
+.winnerTrophy {
+  font-size: 3rem;
+  line-height: 1;
+  margin-bottom: 12px;
+  animation: trophyBounce 1s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes trophyBounce {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.winnerTitle {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+
+.winnerYouBadge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 100px;
+  padding: 4px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+/* Winner scoreboard */
+.winnerScoreboard {
+  padding: 24px 28px;
+  flex: 1;
+}
+
+.winnerScoreTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748B;
+  margin-bottom: 14px;
+}
+
+.winnerScoreList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.winnerScoreRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: all 0.15s;
+}
+
+.winnerScoreRowWinner {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.08) 100%);
+  border-color: rgba(251, 191, 36, 0.3);
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.1);
+}
+
+.winnerScoreRowMe {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.winnerRank {
+  font-size: 1rem;
+  min-width: 28px;
+  text-align: center;
+}
+
+.winnerAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.winnerAvatarCrown {
+  position: absolute;
+  top: -10px;
+  right: -6px;
+  font-size: 0.85rem;
+  animation: crownBounce 1s ease-in-out infinite;
+}
+
+.winnerName {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.winnerScore {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+/* Actions */
+.winnerActions {
+  padding: 20px 28px 28px;
+  display: flex;
+  gap: 12px;
+}
+
+.winnerRestartBtn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+}
+
+.winnerRestartBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.45);
+}
+
+.winnerLeaveBtn {
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  color: #64748B;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.winnerLeaveBtn:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #EF4444;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ── Skribble layout ───────────────────────────────────────────────────────── */
+.skribbleShell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.skribbleMain {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* System chat message (correct guess) */
+.systemMsg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 2px 8px;
+}
+
+.systemMsgCorrect {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #059669;
+}
+
+.systemMsgGame {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  color: #7C3AED;
+}
+
+/* Waiting screen */
+.waitingScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #64748B;
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.waitingEmoji {
+  font-size: 3rem;
+}
+
+.waitingTitle {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.waitingSubtitle {
+  font-size: 0.875rem;
+  color: #94A3B8;
+}

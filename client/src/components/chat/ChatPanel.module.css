@@ -270,3 +270,28 @@
   cursor: not-allowed;
   transform: none;
 }
+
+/* -- System messages (game events) ------------------------------------------ */
+.systemMsg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 2px 8px;
+  border-left: 3px solid currentColor;
+}
+
+.systemMsgCorrect {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border-color: #10B981;
+}
+
+.systemMsgGame {
+  background: rgba(139, 92, 246, 0.08);
+  color: #7C3AED;
+  border-color: #8B5CF6;
+}
