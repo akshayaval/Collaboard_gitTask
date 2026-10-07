@@ -18,6 +18,7 @@ import GameBanner        from '../components/skribble/GameBanner'
 import WordChoiceModal   from '../components/skribble/WordChoiceModal'
 import Scoreboard        from '../components/skribble/Scoreboard'
 import WinnerModal       from '../components/skribble/WinnerModal'
+import InstructionsPanel from '../components/room/InstructionsPanel'
 
 import styles        from './Room.module.css'
 import skribStyles   from '../components/skribble/Skribble.module.css'
@@ -293,6 +294,11 @@ export default function Room() {
             {connected ? 'Live' : 'Connecting…'}
           </span>
         </div>
+
+        {/* Instructions (Skribble mode only) */}
+        {gameMode === 'skribble' && (
+          <InstructionsPanel />
+        )}
 
         {/* Export (only in freeform mode) */}
         {gameMode === 'freeform' && (

@@ -4,13 +4,14 @@
 
 /* -- Page shell -------------------------------------------------------------- */
 .page {
-  min-height: 100dvh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: #FAF7F2;
   font-family: 'Inter', sans-serif;
   color: #1a1a2e;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* -- Navbar ------------------------------------------------------------------ */
@@ -113,7 +114,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  padding: 44px 24px 64px;
 }
 
 /* -- Sticky notes ------------------------------------------------------------ */
@@ -127,6 +128,7 @@
   justify-content: center;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
   animation: floatSlow 6s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .stickyPink {
@@ -590,3 +592,23 @@
   color: #94A3B8;
   font-style: italic;
 }
+
+
+/* -- Join code slots --------------------------------------------------------- */
+.joinCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.joinHint {
+  font-size: 0.82rem;
+  color: #64748B;
+  font-weight: 500;
+  margin: 0;
+}
+
+

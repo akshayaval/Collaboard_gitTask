@@ -1,0 +1,101 @@
+/* CodeSlots.css — animated slot-style code entry */
+
+.cs-root {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+  position: relative;
+}
+
+.cs-slots {
+  display: flex;
+  align-items: center;
+  position: relative;
+  cursor: text;
+}
+
+.cs-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: var(--cs-slot-color, rgba(255, 255, 255, 0.08));
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  overflow: hidden;
+}
+
+.cs-slot-char {
+  font-family: 'Inter', ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--cs-digit-color, #0f172a);
+  position: relative;
+  z-index: 1;
+}
+
+/* cursor blink inside active empty slot */
+.cs-slot-cursor {
+  display: block;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--cs-accent-color, #2563EB);
+  animation: cs-blink 1s step-start infinite;
+}
+
+@keyframes cs-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* Active slot styling */
+.cs-slot-active {
+  border-color: var(--cs-accent-color, #2563EB) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-accent-color, #2563EB) 20%, transparent);
+  background: var(--cs-slot-color, rgba(255, 255, 255, 0.12));
+}
+
+/* Filled slot */
+.cs-slot-filled {
+  border-color: rgba(0,0,0,0.15);
+}
+
+/* Error state */
+.cs-slot-error {
+  border-color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+
+/* Success state */
+.cs-slot-success {
+  border-color: #22C55E !important;
+  background: rgba(34, 197, 94, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15) !important;
+}
+
+/* Hidden real input */
+.cs-hidden-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+  top: 0;
+  left: 0;
+}
+
+/* Success icon overlay */
+.cs-success-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  background: rgba(34, 197, 94, 0.08);
+  border-radius: 10px;
+}

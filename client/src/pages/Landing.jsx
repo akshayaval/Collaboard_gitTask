@@ -4,6 +4,18 @@ import React, { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import styles from './Landing.module.css'
+import CodeSlots from '../components/ui/CodeSlots'
+
+const MODE_INFO = {
+  freeform: {
+    title: 'Collaborative Whiteboard',
+    subtitle: 'Draw, chat, and create together — in real time.',
+  },
+  skribble: {
+    title: 'Skribble — Draw & Guess',
+    subtitle: 'One player draws, everyone else races to guess the word!',
+  },
+}
 
 const PRESET_COLORS = [
   '#60A5FA', '#F472B6', '#34D399', '#FBBF24',
@@ -17,8 +29,11 @@ export default function Landing() {
   const [roomInput, setRoomInput] = useState('')
   const [tab, setTab]             = useState('create')
   const [error, setError]         = useState('')
+  const [joinError, setJoinError] = useState(false)
   const [gameMode, setGameMode]   = useState('freeform')  // 'freeform' | 'skribble'
   const [totalRounds, setTotalRounds] = useState(3)
+
+  const modeInfo = MODE_INFO[gameMode]
 
   const saveSession = (data) => {
     sessionStorage.setItem('collaboard_user', JSON.stringify(data))
@@ -31,11 +46,13 @@ export default function Landing() {
     navigate(`/room/${roomId}`, { state: { gameMode, totalRounds } })
   }, [name, color, navigate, gameMode, totalRounds])
 
-  const handleJoin = useCallback(() => {
-    if (!name.trim()) { setError('Please enter your name'); return }
-    if (!roomInput.trim()) { setError('Please enter a room code'); return }
+  const handleJoin = useCallback((code) => {
+    const finalCode = (code ?? roomInput).trim().toUpperCase()
+    if (!name.trim()) { setError('Please enter your name'); setJoinError(true); return }
+    if (!finalCode) { setError('Please enter a room code'); setJoinError(true); return }
+    setJoinError(false)
     saveSession({ name: name.trim(), color })
-    navigate(`/room/${roomInput.trim().toUpperCase()}`)
+    navigate(`/room/${finalCode}`)
   }, [name, color, roomInput, navigate])
 
   return (
@@ -146,13 +163,11 @@ export default function Landing() {
           </div>
 
           <h1 className={styles.headline}>
-            Where <span className={styles.headlineAccent}>Ideas</span><br />
-            Come Together
+            {modeInfo.title}
           </h1>
 
           <p className={styles.heroSub}>
-            The infinite online whiteboard for teams to brainstorm,<br />
-            plan, design, and collaborate in real time.
+            {modeInfo.subtitle}
           </p>
 
           <div className={styles.ctaForm}>
@@ -205,7 +220,6 @@ export default function Landing() {
                     onClick={() => setGameMode('freeform')}
                     type="button"
                   >
-                    <span className={styles.modeIcon}>🎨</span>
                     <span className={styles.modeName}>Collaboard</span>
                     <span className={styles.modeDesc}>Freeform whiteboard</span>
                   </button>
@@ -215,7 +229,6 @@ export default function Landing() {
                     onClick={() => setGameMode('skribble')}
                     type="button"
                   >
-                    <span className={styles.modeIcon}>✏️</span>
                     <span className={styles.modeName}>Skribble</span>
                     <span className={styles.modeDesc}>Drawing &amp; guessing game</span>
                   </button>
@@ -247,33 +260,40 @@ export default function Landing() {
                 )}
 
                 <button className={styles.ctaButton} onClick={handleCreate}>
-                  {gameMode === 'skribble' ? '🎮 Start Skribble Game' : 'Start Collaboarding'}
+                  {gameMode === 'skribble' ? 'Start Skribble Game' : 'Start Collaboarding'}
                 </button>
               </>
             ) : (
-              <div className={styles.joinRow}>
-                <input
-                  type="text"
-                  placeholder="Room code (e.g. A1B2C3D4)"
+              <div className={styles.joinCol}>
+                <p className={styles.joinHint}>Enter your 8-character room code</p>
+                <CodeSlots
+                  length={8}
                   value={roomInput}
-                  onChange={e => { setRoomInput(e.target.value.toUpperCase()); setError('') }}
-                  onKeyDown={e => e.key === 'Enter' && handleJoin()}
-                  className={styles.nameInput}
-                  maxLength={8}
-                  style={{ fontFamily: 'monospace', letterSpacing: '0.08em' }}
+                  onChange={(v) => { setRoomInput(v); setError(''); setJoinError(false) }}
+                  onComplete={(code) => handleJoin(code)}
+                  status={joinError ? 'error' : 'idle'}
+                  autoFocus
+                  slotSize={40}
+                  gap={6}
+                  accentColor="#2563EB"
+                  inkColor="rgba(0,0,0,0.12)"
+                  slotColor="#FFFFFF"
+                  digitColor="#0f172a"
                 />
-                <button className={styles.ctaButton} onClick={handleJoin}>Join</button>
+                <button
+                  className={styles.ctaButton}
+                  onClick={() => handleJoin()}
+                  disabled={roomInput.length < 8}
+                  style={{ opacity: roomInput.length < 8 ? 0.6 : 1 }}
+                >
+                  Join Room
+                </button>
               </div>
             )}
 
             {error && <div className={styles.errorMsg}>{error}</div>}
 
             <button className={styles.watchLink}>
-              <span className={styles.playIcon}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                  <polygon points="2,1 9,5 2,9"/>
-                </svg>
-              </span>
               Watch how it works
             </button>
           </div>
