@@ -6,24 +6,56 @@ const rooms = new Map();
 
 function getOrCreateRoom(roomId, options = {}) {
   if (!rooms.has(roomId)) {
+    const gameMode = options.gameMode || 'freeform';
+    const totalRounds = Number(options.totalRounds) || 3;
+    const maxPlayers = Number(options.maxPlayers) || (gameMode === 'skribble' ? 4 : 10);
     rooms.set(roomId, {
       roomId,
+      hostId: options.hostId || null,
+      maxPlayers,
       users: new Map(), // socketId -> user object
       whiteboard: { actions: [] },
       messages: [], // last 100 messages
-      gameMode: options.gameMode || 'freeform',
-      totalRounds: options.totalRounds || 3,
-      game: null, // populated when skribble game starts
+      gameMode,
+      totalRounds,
+      game: gameMode === 'skribble' ? createInitialGameState(totalRounds) : null,
     });
   }
   return rooms.get(roomId);
 }
 
-function setRoomMode(roomId, gameMode, totalRounds) {
+function createInitialGameState(totalRounds) {
+  return {
+    drawerId: null,
+    word: null,
+    maskedWord: null,
+    phase: 'lobby',
+    round: 0,
+    totalRounds: totalRounds || 3,
+    turnOrder: [],
+    turnIndex: 0,
+    roundEndsAt: null,
+    scores: {},
+    roundScores: {},
+    guessedCorrectly: new Set(),
+    winnerIds: null,
+    roundTimer: null,
+    choiceTimer: null,
+    roundEndTimer: null,
+    lastWord: null,
+    lastReason: null,
+  };
+}
+
+function setRoomMode(roomId, gameMode, totalRounds, maxPlayers) {
   const room = rooms.get(roomId);
   if (!room) return;
   room.gameMode = gameMode || 'freeform';
-  room.totalRounds = totalRounds || 3;
+  if (totalRounds) room.totalRounds = Number(totalRounds);
+  if (maxPlayers) room.maxPlayers = Number(maxPlayers);
+  if (room.gameMode === 'skribble' && !room.game) {
+    room.game = createInitialGameState(room.totalRounds);
+  }
 }
 
 function addUser(roomId, socketId, userData) {
@@ -35,15 +67,23 @@ function addUser(roomId, socketId, userData) {
     cursor: { x: 0, y: 0 },
   };
   room.users.set(socketId, user);
+  if (!room.hostId) {
+    room.hostId = socketId;
+  }
   return user;
 }
 
 function removeUser(roomId, socketId) {
   const room = rooms.get(roomId);
-  if (!room) return;
+  if (!room) return null;
   room.users.delete(socketId);
   // Clean up empty rooms
   if (room.users.size === 0) {
+    if (room.game) {
+      if (room.game.roundTimer) clearTimeout(room.game.roundTimer);
+      if (room.game.choiceTimer) clearTimeout(room.game.choiceTimer);
+      if (room.game.roundEndTimer) clearTimeout(room.game.roundEndTimer);
+    }
     rooms.delete(roomId);
     return null;
   }
@@ -60,6 +100,8 @@ function getRoomSnapshot(roomId) {
 
   const snap = {
     roomId: room.roomId,
+    hostId: room.hostId,
+    maxPlayers: room.maxPlayers,
     users: Array.from(room.users.values()),
     whiteboard: {
       actions: room.whiteboard.actions,
@@ -69,7 +111,7 @@ function getRoomSnapshot(roomId) {
     totalRounds: room.totalRounds,
   };
 
-  // Include safe game state (without the secret word)
+  // Include safe game state (without the secret word during drawing)
   if (room.game) {
     snap.game = getSafeGameState(room.game);
   }
@@ -88,9 +130,12 @@ function getSafeGameState(game) {
     turnIndex: game.turnIndex,
     roundEndsAt: game.roundEndsAt,
     scores: { ...game.scores },
+    roundScores: { ...game.roundScores },
     turnOrder: [...game.turnOrder],
     guessedCorrectly: Array.from(game.guessedCorrectly),
     winnerIds: game.winnerIds || null,
+    lastWord: (game.phase === 'round_end' || game.phase === 'game_over') ? game.lastWord : null,
+    lastReason: game.lastReason || null,
   };
 }
 
@@ -159,6 +204,12 @@ function initGame(roomId, turnOrder, totalRounds) {
   const room = rooms.get(roomId);
   if (!room) return null;
 
+  if (room.game) {
+    if (room.game.roundTimer) clearTimeout(room.game.roundTimer);
+    if (room.game.choiceTimer) clearTimeout(room.game.choiceTimer);
+    if (room.game.roundEndTimer) clearTimeout(room.game.roundEndTimer);
+  }
+
   const scores = {};
   for (const uid of turnOrder) scores[uid] = 0;
 
@@ -168,44 +219,58 @@ function initGame(roomId, turnOrder, totalRounds) {
     maskedWord: null,
     phase: 'choosing',
     round: 0, // 0-indexed turn count across all players
-    totalRounds,
+    totalRounds: totalRounds || room.totalRounds || 3,
     turnOrder: [...turnOrder],
     turnIndex: 0,
     roundEndsAt: null,
     scores,
+    roundScores: {},
     guessedCorrectly: new Set(),
     winnerIds: null,
     roundTimer: null,
     choiceTimer: null,
+    roundEndTimer: null,
+    lastWord: null,
+    lastReason: null,
   };
 
   return room.game;
 }
 
-function resetGame(roomId) {
+function resetGameToLobby(roomId) {
   const room = rooms.get(roomId);
-  if (!room || !room.game) return null;
+  if (!room) return null;
 
-  const { turnOrder, totalRounds, scores } = room.game;
-  // Reset scores
-  const newScores = {};
-  for (const uid of turnOrder) newScores[uid] = 0;
+  if (room.game) {
+    if (room.game.roundTimer) clearTimeout(room.game.roundTimer);
+    if (room.game.choiceTimer) clearTimeout(room.game.choiceTimer);
+    if (room.game.roundEndTimer) clearTimeout(room.game.roundEndTimer);
+  }
+
+  const scores = {};
+  for (const uid of room.users.keys()) {
+    scores[uid] = 0;
+  }
 
   room.game = {
     drawerId: null,
     word: null,
     maskedWord: null,
-    phase: 'choosing',
+    phase: 'lobby',
     round: 0,
-    totalRounds,
-    turnOrder: [...turnOrder],
+    totalRounds: room.totalRounds,
+    turnOrder: [],
     turnIndex: 0,
     roundEndsAt: null,
-    scores: newScores,
+    scores,
+    roundScores: {},
     guessedCorrectly: new Set(),
     winnerIds: null,
     roundTimer: null,
     choiceTimer: null,
+    roundEndTimer: null,
+    lastWord: null,
+    lastReason: null,
   };
 
   return room.game;
@@ -264,6 +329,6 @@ module.exports = {
   appendStrokePoint,
   endStroke,
   initGame,
-  resetGame,
+  resetGameToLobby,
   maskWord,
 };

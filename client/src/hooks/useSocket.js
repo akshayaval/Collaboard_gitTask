@@ -7,7 +7,10 @@ let socketInstance = null
 
 function getSocket() {
   if (!socketInstance) {
-    socketInstance = io(import.meta.env.VITE_SOCKET_URL || undefined, {
+    const url = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+      ? 'http://localhost:3001'
+      : (import.meta.env.VITE_SOCKET_URL || undefined)
+    socketInstance = io(url, {
       transports: ['websocket'],
       autoConnect: false,
     })

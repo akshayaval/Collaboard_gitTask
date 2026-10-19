@@ -1,4 +1,4 @@
-/* Landing.module.css — Light cream hero design matching reference */
+/* Landing.module.css ï¿½ Light cream hero design matching reference */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
@@ -538,27 +538,43 @@
   font-weight: 500;
 }
 
-/* -- Rounds selector --------------------------------------------------------- */
-.roundsRow {
+/* -- Skribble settings ------------------------------------------------------- */
+.skribbleSettingsRow {
   width: 100%;
   max-width: 480px;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .skribbleSettingsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.roundsRow {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: rgba(139,92,246,0.06);
   border: 1px solid rgba(139,92,246,0.2);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 12px 14px;
 }
 .roundsLabel {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: #475569;
-  flex: 1;
+  text-align: center;
 }
 .roundsControls {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 }
 .roundsBtn {
@@ -591,6 +607,7 @@
   font-size: 0.72rem;
   color: #94A3B8;
   font-style: italic;
+  text-align: center;
 }
 
 

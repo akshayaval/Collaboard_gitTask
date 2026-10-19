@@ -8,24 +8,28 @@ import { useState, useEffect, useRef, useCallback } from 'react'
  * @returns Skribble game state and helpers
  */
 export function useSkribbleGame(socketRef, userIdRef) {
-  const [phase, setPhase]           = useState('waiting') // waiting|choosing|drawing|round_end|game_over
+  const [phase, setPhase]           = useState('lobby') // lobby|waiting|choosing|drawing|round_end|game_over
+  const [hostId, setHostId]         = useState(null)
   const [drawerId, setDrawerId]     = useState(null)
   const [drawerName, setDrawerName] = useState('')
   const [maskedWord, setMaskedWord] = useState('')
   const [myWord, setMyWord]         = useState('')       // only for the drawer
   const [wordChoices, setWordChoices] = useState([])    // only for the drawer
   const [scores, setScores]         = useState({})
+  const [roundScores, setRoundScores] = useState({})
   const [turnOrder, setTurnOrder]   = useState([])
   const [roundNumber, setRoundNumber] = useState(1)
   const [totalTurns, setTotalTurns] = useState(0)
   const [roundEndsAt, setRoundEndsAt] = useState(null)
   const [lastWord, setLastWord]     = useState('')      // revealed after round
+  const [roundEndReason, setRoundEndReason] = useState(null) // 'timeUp' | 'allGuessed' | 'drawerLeft'
   const [winnerIds, setWinnerIds]   = useState([])
   const [winnerNames, setWinnerNames] = useState([])
   const [choiceTimeoutMs, setChoiceTimeoutMs] = useState(10000)
 
-  // Derived: is current user the drawer?
+  // Derived
   const isDrawer = drawerId && drawerId === userIdRef?.current
+  const isHost = Boolean(hostId && hostId === userIdRef?.current)
 
   // ── Emit helper ─────────────────────────────────────────────────────────────
   const emit = useCallback((event, data) => {
@@ -42,15 +46,28 @@ export function useSkribbleGame(socketRef, userIdRef) {
 
       // Restore from room:state if we join mid-game
       const handleRoomState = (snapshot) => {
+        if (snapshot?.hostId) setHostId(snapshot.hostId)
         if (snapshot?.game) {
           const g = snapshot.game
-          setPhase(g.phase || 'waiting')
+          setPhase(g.phase || 'lobby')
           setDrawerId(g.drawerId || null)
           setMaskedWord(g.maskedWord || '')
           setScores(g.scores || {})
+          setRoundScores(g.roundScores || {})
           setTurnOrder(g.turnOrder || [])
           setRoundEndsAt(g.roundEndsAt || null)
+          setRoundNumber(g.round ? g.round + 1 : 1) // round is 0-indexed turn count
+          if (g.turnOrder && g.totalRounds) {
+            setTotalTurns(g.turnOrder.length * g.totalRounds)
+          }
+          if (g.lastWord) setLastWord(g.lastWord)
+          if (g.lastReason) setRoundEndReason(g.lastReason)
+          if (g.winnerIds) setWinnerIds(g.winnerIds)
         }
+      }
+
+      const handleHost = ({ hostId }) => {
+        setHostId(hostId)
       }
 
       // Game is about to start (players locked in, scores reset)
@@ -59,6 +76,7 @@ export function useSkribbleGame(socketRef, userIdRef) {
         setTurnOrder(turnOrder || [])
         setTotalTurns((turnOrder?.length || 0) * (totalRounds || 1))
         setScores(scores || {})
+        setRoundScores({})
         setDrawerId(null)
         setMaskedWord('')
         setMyWord('')
@@ -77,6 +95,8 @@ export function useSkribbleGame(socketRef, userIdRef) {
         setMaskedWord('')
         setMyWord('')
         setLastWord('')
+        setRoundEndReason(null)
+        setRoundScores({})
         setChoiceTimeoutMs(timeoutMs || 10000)
       }
 
@@ -108,13 +128,16 @@ export function useSkribbleGame(socketRef, userIdRef) {
       // A player guessed correctly — update scores live
       const handleCorrectGuess = ({ userId, name, points, scores }) => {
         setScores({ ...scores })
+        setRoundScores(prev => ({ ...prev, [userId]: points }))
       }
 
       // Round ended (timer or all guessed)
-      const handleRoundEnd = ({ word, scores }) => {
+      const handleRoundEnd = ({ word, reason, scores, roundScores }) => {
         setPhase('round_end')
         setLastWord(word || '')
+        setRoundEndReason(reason || 'timeUp')
         setScores({ ...scores })
+        if (roundScores) setRoundScores({ ...roundScores })
       }
 
       // Game over
@@ -125,7 +148,26 @@ export function useSkribbleGame(socketRef, userIdRef) {
         setScores({ ...scores })
       }
 
+      // Return to lobby
+      const handleLobby = ({ phase: newPhase, hostId: newHostId, scores }) => {
+        setPhase(newPhase || 'lobby')
+        setScores(scores || {})
+        setRoundScores({})
+        setLastWord('')
+        setRoundEndReason(null)
+        setDrawerId(null)
+        setMaskedWord('')
+        setMyWord('')
+        setWordChoices([])
+        setWinnerIds([])
+        setWinnerNames([])
+        setTurnOrder([])
+        setRoundNumber(1)
+        if (newHostId) setHostId(newHostId)
+      }
+
       socket.on('room:state', handleRoomState)
+      socket.on('room:host', handleHost)
       socket.on('game:starting', handleGameStarting)
       socket.on('game:choosingStart', handleChoosingStart)
       socket.on('game:wordChoices', handleWordChoices)
@@ -134,9 +176,11 @@ export function useSkribbleGame(socketRef, userIdRef) {
       socket.on('game:correctGuess', handleCorrectGuess)
       socket.on('game:roundEnd', handleRoundEnd)
       socket.on('game:over', handleGameOver)
+      socket.on('game:lobby', handleLobby)
 
       cleanup = () => {
         socket.off('room:state', handleRoomState)
+        socket.off('room:host', handleHost)
         socket.off('game:starting', handleGameStarting)
         socket.off('game:choosingStart', handleChoosingStart)
         socket.off('game:wordChoices', handleWordChoices)
@@ -145,6 +189,7 @@ export function useSkribbleGame(socketRef, userIdRef) {
         socket.off('game:correctGuess', handleCorrectGuess)
         socket.off('game:roundEnd', handleRoundEnd)
         socket.off('game:over', handleGameOver)
+        socket.off('game:lobby', handleLobby)
       }
       return true
     }
@@ -170,12 +215,18 @@ export function useSkribbleGame(socketRef, userIdRef) {
     setWordChoices([])
   }, [emit])
 
+  const startGame = useCallback(() => {
+    emit('game:start', {})
+  }, [emit])
+
   const restartGame = useCallback(() => {
     emit('game:restart', {})
   }, [emit])
 
   return {
     phase,
+    hostId,
+    isHost,
     drawerId,
     drawerName,
     isDrawer,
@@ -183,15 +234,18 @@ export function useSkribbleGame(socketRef, userIdRef) {
     myWord,
     wordChoices,
     scores,
+    roundScores,
     turnOrder,
     roundNumber,
     totalTurns,
     roundEndsAt,
     lastWord,
+    roundEndReason,
     winnerIds,
     winnerNames,
     choiceTimeoutMs,
     chooseWord,
+    startGame,
     restartGame,
   }
 }

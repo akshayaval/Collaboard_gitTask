@@ -14,8 +14,10 @@ import Toolbar           from '../components/whiteboard/Toolbar'
 import PresenceSidebar   from '../components/presence/PresenceSidebar'
 import ExportModal       from '../components/ui/ExportModal'
 
+import LobbyPanel        from '../components/skribble/LobbyPanel'
 import GameBanner        from '../components/skribble/GameBanner'
 import WordChoiceModal   from '../components/skribble/WordChoiceModal'
+import WordRevealModal   from '../components/skribble/WordRevealModal'
 import Scoreboard        from '../components/skribble/Scoreboard'
 import WinnerModal       from '../components/skribble/WinnerModal'
 import InstructionsPanel from '../components/room/InstructionsPanel'
@@ -23,7 +25,9 @@ import InstructionsPanel from '../components/room/InstructionsPanel'
 import styles        from './Room.module.css'
 import skribStyles   from '../components/skribble/Skribble.module.css'
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined
+const SOCKET_URL = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+  ? 'http://localhost:3001'
+  : (import.meta.env.VITE_SOCKET_URL || undefined)
 
 export default function Room() {
   const { roomId }   = useParams()
@@ -43,6 +47,8 @@ export default function Room() {
   // Mode is determined from router state (creator) or from server's room:state (joiner)
   const [gameMode, setGameMode]     = useState(location.state?.gameMode || 'freeform')
   const [totalRounds, setTotalRounds] = useState(location.state?.totalRounds || 3)
+  const [maxPlayers, setMaxPlayers]   = useState(location.state?.maxPlayers || 4)
+  const [hostId, setHostId]           = useState(null)
 
   // -- Socket ----------------------------------------------------------------
   const socketRef = useRef(null)
@@ -68,9 +74,11 @@ export default function Room() {
   // -- Skribble hook ---------------------------------------------------------
   const skribble = useSkribbleGame(socketRef, userId)
 
-  // Derived: is the current user the drawer in skribble?
+  // Derived: is current user the host / drawer in skribble?
+  const effectiveHostId = skribble.hostId || hostId
+  const isHost = Boolean(effectiveHostId && effectiveHostId === userId.current)
   const isDrawer = gameMode === 'skribble' && skribble.drawerId === userId.current
-  const drawingDisabled = gameMode === 'skribble' && !isDrawer
+  const drawingDisabled = gameMode === 'skribble' && (!isDrawer || skribble.phase !== 'drawing')
 
   // -- Socket setup + room join ----------------------------------------------
   useEffect(() => {
@@ -92,17 +100,32 @@ export default function Room() {
         color: userColor,
         gameMode: location.state?.gameMode || undefined,
         totalRounds: location.state?.totalRounds || undefined,
+        maxPlayers: location.state?.maxPlayers || undefined,
       })
     })
 
     socket.on('disconnect', () => setConnected(false))
 
-    // Full room state on join — picks up gameMode from server
+    // Handle join rejection (e.g. room is full)
+    socket.on('room:join_error', ({ message }) => {
+      toast(message || 'Room is full', 'error')
+      socket.disconnect()
+      navigate('/', { state: { error: message || 'Room is full', roomCode: roomId } })
+    })
+
+    // Host updates
+    socket.on('room:host', ({ hostId: newHostId }) => {
+      setHostId(newHostId)
+    })
+
+    // Full room state on join — picks up gameMode, host, maxPlayers from server
     socket.on('room:state', (snapshot) => {
       setUsers(snapshot.users)
       wb.syncActions(snapshot.whiteboard.actions)
       if (snapshot.gameMode) setGameMode(snapshot.gameMode)
       if (snapshot.totalRounds) setTotalRounds(snapshot.totalRounds)
+      if (snapshot.maxPlayers) setMaxPlayers(snapshot.maxPlayers)
+      if (snapshot.hostId) setHostId(snapshot.hostId)
     })
 
     // User list updates
@@ -363,21 +386,34 @@ export default function Room() {
     <div className={styles.shell}>
       {header}
 
-      {/* Game banner (masked word + timer) */}
-      <GameBanner
-        phase={skribble.phase}
-        isDrawer={isDrawer}
-        drawerName={skribble.drawerName}
-        maskedWord={skribble.maskedWord}
-        myWord={skribble.myWord}
-        roundEndsAt={skribble.roundEndsAt}
-        roundNumber={skribble.roundNumber}
-        totalTurns={skribble.totalTurns}
-      />
+      {/* Lobby panel (lobby phase) or Game banner (game phases) */}
+      {skribble.phase === 'lobby' ? (
+        <LobbyPanel
+          users={users}
+          hostId={effectiveHostId}
+          currentUserId={userId.current}
+          isHost={isHost}
+          maxPlayers={maxPlayers}
+          roomId={roomId}
+          onStartGame={skribble.startGame}
+          onShare={handleShare}
+        />
+      ) : (
+        <GameBanner
+          phase={skribble.phase}
+          isDrawer={isDrawer}
+          drawerName={skribble.drawerName}
+          maskedWord={skribble.maskedWord}
+          myWord={skribble.myWord}
+          roundEndsAt={skribble.roundEndsAt}
+          roundNumber={skribble.roundNumber}
+          totalTurns={skribble.totalTurns}
+        />
+      )}
 
       <div className={styles.content}>
-        {/* Toolbar shown only to the drawer */}
-        {isDrawer && (
+        {/* Toolbar shown only to the drawer during drawing phase */}
+        {isDrawer && skribble.phase === 'drawing' && (
           <Toolbar
             wb={wb}
             onExport={() => {}}
@@ -400,6 +436,8 @@ export default function Room() {
             users={users}
             currentUserId={userId.current}
             drawerId={skribble.drawerId}
+            turnOrder={skribble.turnOrder}
+            phase={skribble.phase}
           />
           <div style={{ flex: 1, minHeight: 0, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
             <PresenceSidebar
@@ -422,6 +460,17 @@ export default function Room() {
         />
       )}
 
+      {/* Word reveal modal (round end, ~5s) */}
+      {skribble.phase === 'round_end' && (
+        <WordRevealModal
+          word={skribble.lastWord}
+          reason={skribble.roundEndReason}
+          roundScores={skribble.roundScores}
+          users={users}
+          drawerId={skribble.drawerId}
+        />
+      )}
+
       {/* Winner modal (game over) */}
       {skribble.phase === 'game_over' && (
         <WinnerModal
@@ -430,6 +479,7 @@ export default function Room() {
           scores={skribble.scores}
           users={users}
           currentUserId={userId.current}
+          isHost={isHost}
           onLeave={handleLeave}
           onRestart={skribble.restartGame}
         />

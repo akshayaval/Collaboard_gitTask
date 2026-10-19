@@ -17,12 +17,30 @@ function computePoints(roundEndsAt) {
   return Math.max(10, Math.round(MAX_POINTS * fraction));
 }
 
+/** Check if all eligible players have guessed */
+function checkAllGuessed(io, roomId) {
+  const room = rm.getRoom(roomId);
+  if (!room || !room.game || room.game.phase !== 'drawing') return;
+
+  const game = room.game;
+  // Non-drawer players in turnOrder who are still connected
+  const nonDrawers = game.turnOrder.filter(uid => uid !== game.drawerId && room.users.has(uid));
+  const allGuessed = nonDrawers.length > 0 && nonDrawers.every(uid => game.guessedCorrectly.has(uid));
+  if (allGuessed) {
+    endRound(io, roomId, 'allGuessed');
+  }
+}
+
 /** Start the "choosing" phase for the current turn's drawer */
 function startChoosing(io, roomId) {
   const room = rm.getRoom(roomId);
   if (!room || !room.game) return;
 
   const game = room.game;
+  if (game.roundTimer) { clearTimeout(game.roundTimer); game.roundTimer = null; }
+  if (game.choiceTimer) { clearTimeout(game.choiceTimer); game.choiceTimer = null; }
+  if (game.roundEndTimer) { clearTimeout(game.roundEndTimer); game.roundEndTimer = null; }
+
   const totalTurns = game.turnOrder.length * game.totalRounds;
 
   // Check game over
@@ -50,6 +68,7 @@ function startChoosing(io, roomId) {
   game.maskedWord = null;
   game.phase = 'choosing';
   game.guessedCorrectly = new Set();
+  game.roundScores = {};
   game.roundEndsAt = null;
 
   const words = pickWords(3);
@@ -73,7 +92,6 @@ function startChoosing(io, roomId) {
   });
 
   // Auto-pick if drawer doesn't choose in time
-  if (game.choiceTimer) clearTimeout(game.choiceTimer);
   game.choiceTimer = setTimeout(() => {
     const r = rm.getRoom(roomId);
     if (!r || !r.game || r.game.phase !== 'choosing' || r.game.drawerId !== drawerId) return;
@@ -96,6 +114,7 @@ function handleWordChosen(io, roomId, drawerId, word) {
   game.word = word;
   game.maskedWord = rm.maskWord(word);
   game.phase = 'drawing';
+  game.roundScores = {};
   game.roundEndsAt = Date.now() + ROUND_DURATION_MS;
 
   // Tell the drawer their confirmed word
@@ -118,17 +137,17 @@ function handleWordChosen(io, roomId, drawerId, word) {
   rm.clearWhiteboardActions(roomId);
   io.to(roomId).emit('whiteboard:sync', []);
 
-  // Set round end timer
+  // Set round end timer (80 seconds)
   if (game.roundTimer) clearTimeout(game.roundTimer);
   game.roundTimer = setTimeout(() => {
     const r = rm.getRoom(roomId);
     if (!r || !r.game || r.game.phase !== 'drawing' || r.game.drawerId !== drawerId) return;
-    endRound(io, roomId);
+    endRound(io, roomId, 'timeUp');
   }, ROUND_DURATION_MS);
 }
 
 /** End the current round (timer expired or everyone guessed) */
-function endRound(io, roomId) {
+function endRound(io, roomId, reason = 'timeUp') {
   const room = rm.getRoom(roomId);
   if (!room || !room.game) return;
 
@@ -138,19 +157,26 @@ function endRound(io, roomId) {
   // Clear timers
   if (game.roundTimer) { clearTimeout(game.roundTimer); game.roundTimer = null; }
   if (game.choiceTimer) { clearTimeout(game.choiceTimer); game.choiceTimer = null; }
+  if (game.roundEndTimer) { clearTimeout(game.roundEndTimer); game.roundEndTimer = null; }
 
   game.phase = 'round_end';
+  game.lastWord = game.word;
+  game.lastReason = reason;
 
   // Drawer gets partial points if at least one person guessed
   const guessCount = game.guessedCorrectly.size;
-  if (guessCount > 0 && game.drawerId) {
-    const drawerBonus = Math.round((guessCount / (room.users.size - 1)) * 50);
+  const eligibleGuessers = game.turnOrder.filter(uid => uid !== game.drawerId && room.users.has(uid)).length;
+  if (guessCount > 0 && game.drawerId && eligibleGuessers > 0) {
+    const drawerBonus = Math.round((guessCount / eligibleGuessers) * 50);
     game.scores[game.drawerId] = (game.scores[game.drawerId] || 0) + drawerBonus;
+    game.roundScores[game.drawerId] = drawerBonus;
   }
 
   io.to(roomId).emit('game:roundEnd', {
     word: game.word,
+    reason,
     scores: { ...game.scores },
+    roundScores: { ...game.roundScores },
     drawerId: game.drawerId,
   });
 
@@ -158,10 +184,10 @@ function endRound(io, roomId) {
   rm.clearWhiteboardActions(roomId);
   io.to(roomId).emit('whiteboard:sync', []);
 
-  // Advance to next turn after delay
-  setTimeout(() => {
+  // Advance to next turn after 5 second delay (PART 4 word reveal)
+  game.roundEndTimer = setTimeout(() => {
     const r = rm.getRoom(roomId);
-    if (!r || !r.game) return;
+    if (!r || !r.game || r.game.phase !== 'round_end') return;
 
     r.game.round += 1;
     r.game.turnIndex = (r.game.turnIndex + 1) % r.game.turnOrder.length;
@@ -178,12 +204,13 @@ function endGame(io, roomId) {
   const game = room.game;
   if (game.roundTimer) { clearTimeout(game.roundTimer); game.roundTimer = null; }
   if (game.choiceTimer) { clearTimeout(game.choiceTimer); game.choiceTimer = null; }
+  if (game.roundEndTimer) { clearTimeout(game.roundEndTimer); game.roundEndTimer = null; }
 
   game.phase = 'game_over';
 
   // Find winners
   const scores = game.scores;
-  const maxScore = Math.max(...Object.values(scores));
+  const maxScore = Math.max(...Object.values(scores), 0);
   const winnerIds = Object.entries(scores)
     .filter(([, s]) => s === maxScore)
     .map(([uid]) => uid);
@@ -205,25 +232,6 @@ function getSocketById(io, socketId) {
   return io.sockets.sockets.get(socketId) || null;
 }
 
-/** Try to start a Skribble game if conditions are met (2+ players, no game running) */
-function tryStartSkribble(io, roomId) {
-  const room = rm.getRoom(roomId);
-  if (!room || room.gameMode !== 'skribble') return;
-  if (room.users.size < 2) return;
-  if (room.game && room.game.phase !== 'game_over') return;
-
-  const turnOrder = Array.from(room.users.keys());
-  rm.initGame(roomId, turnOrder, room.totalRounds);
-
-  io.to(roomId).emit('game:starting', {
-    turnOrder,
-    totalRounds: room.totalRounds,
-    scores: room.game.scores,
-  });
-
-  startChoosing(io, roomId);
-}
-
 // ── Main handler registration ───────────────────────────────────────────────
 
 module.exports = function registerHandlers(io, socket) {
@@ -231,22 +239,39 @@ module.exports = function registerHandlers(io, socket) {
   let currentUserId = socket.id;
 
   // ── ROOM JOIN ──────────────────────────────────────────────────────────────
-  socket.on('room:join', ({ roomId, name, color, gameMode, totalRounds }) => {
+  socket.on('room:join', ({ roomId, name, color, gameMode, totalRounds, maxPlayers }) => {
     if (!roomId) return;
-    currentRoomId = roomId;
-    socket.join(roomId);
 
-    // If this is the first join, set the mode; otherwise preserve existing mode
     const existingRoom = rm.getRoom(roomId);
+    let room;
     if (!existingRoom) {
-      rm.getOrCreateRoom(roomId, {
+      room = rm.getOrCreateRoom(roomId, {
         gameMode: gameMode || 'freeform',
         totalRounds: Number(totalRounds) || 3,
+        maxPlayers: Number(maxPlayers) || (gameMode === 'skribble' ? 4 : 10),
       });
-    } else if (gameMode && !existingRoom.game) {
-      // Allow updating mode before game starts
-      rm.setRoomMode(roomId, gameMode, Number(totalRounds) || existingRoom.totalRounds);
+      room.hostId = socket.id;
+    } else {
+      room = existingRoom;
+      // If room is full AND the game is still in lobby, reject the join.
+      // Once the game has started, extra players join as spectators (they are
+      // not added to turnOrder and don't score until the next game).
+      if (room.gameMode === 'skribble' && room.maxPlayers && !room.users.has(socket.id)) {
+        const gamePhase = room.game?.phase || 'lobby';
+        if (gamePhase === 'lobby' && room.users.size >= room.maxPlayers) {
+          socket.emit('room:join_error', { message: 'Room is full' });
+          return;
+        }
+      }
+      if (!room.hostId || room.users.size === 0) {
+        room.hostId = socket.id;
+      }
     }
+
+    // Only set currentRoomId after all rejection checks pass
+    currentRoomId = roomId;
+
+    socket.join(roomId);
 
     const user = rm.addUser(roomId, socket.id, { name, color });
     const snapshot = rm.getRoomSnapshot(roomId);
@@ -254,18 +279,14 @@ module.exports = function registerHandlers(io, socket) {
     // Send full state to the joining user
     socket.emit('room:state', snapshot);
 
-    // Notify everyone else of the updated user list
+    // Notify everyone of updated user list & host
     io.to(roomId).emit('room:users', rm.getUsersArray(roomId));
+    io.to(roomId).emit('room:host', { hostId: room.hostId });
 
     // Announce join
     socket.to(roomId).emit('room:user_joined', user);
 
-    console.log(`[+] ${name} (${socket.id}) joined room ${roomId} (${snapshot.gameMode})`);
-
-    // If skribble room: try to start game (delayed slightly to let state propagate)
-    if (snapshot.gameMode === 'skribble') {
-      setTimeout(() => tryStartSkribble(io, roomId), 500);
-    }
+    console.log(`[+] ${name} (${socket.id}) joined room ${roomId} (${snapshot.gameMode}, host: ${room.hostId === socket.id})`);
   });
 
   // ── WHITEBOARD DRAWING ─────────────────────────────────────────────────────
@@ -415,6 +436,22 @@ module.exports = function registerHandlers(io, socket) {
         return;
       }
 
+      // Spectator check: if not in turnOrder, spectators cannot score or guess
+      const isPlayer = game.turnOrder.includes(socket.id);
+      if (!isPlayer) {
+        const message = {
+          id: uuidv4(),
+          userId: socket.id,
+          name,
+          color,
+          text: cappedText,
+          ts: Date.now(),
+        };
+        rm.addMessage(currentRoomId, message);
+        io.to(currentRoomId).emit('chat:message', message);
+        return;
+      }
+
       // Check if they already guessed correctly
       if (game.guessedCorrectly.has(socket.id)) {
         // They can still chat but can't win again — broadcast normally
@@ -436,6 +473,7 @@ module.exports = function registerHandlers(io, socket) {
         // Correct guess!
         const points = computePoints(game.roundEndsAt);
         game.scores[socket.id] = (game.scores[socket.id] || 0) + points;
+        game.roundScores[socket.id] = points;
         game.guessedCorrectly.add(socket.id);
 
         // Send private "correct!" message to guesser
@@ -458,12 +496,7 @@ module.exports = function registerHandlers(io, socket) {
           scores: { ...game.scores },
         });
 
-        // Check if everyone (except drawer) has guessed
-        const nonDrawers = Array.from(room.users.keys()).filter(uid => uid !== game.drawerId);
-        const allGuessed = nonDrawers.length > 0 && nonDrawers.every(uid => game.guessedCorrectly.has(uid));
-        if (allGuessed) {
-          endRound(io, currentRoomId);
-        }
+        checkAllGuessed(io, currentRoomId);
         return;
       }
 
@@ -513,18 +546,16 @@ module.exports = function registerHandlers(io, socket) {
     handleWordChosen(io, currentRoomId, socket.id, word);
   });
 
-  // ── SKRIBBLE: Restart game ─────────────────────────────────────────────────
-  socket.on('game:restart', () => {
+  // ── SKRIBBLE: Host starts game from lobby ─────────────────────────────────
+  socket.on('game:start', () => {
     if (!currentRoomId) return;
     const room = rm.getRoom(currentRoomId);
     if (!room || room.gameMode !== 'skribble') return;
-    if (!room.game || room.game.phase !== 'game_over') return;
+    if (socket.id !== room.hostId) return; // Only host can start
+    if (!room.game || room.game.phase !== 'lobby') return; // Only in lobby
+    if (room.users.size < 2) return; // Must have at least 2 players
 
-    // Clear any lingering timers
-    if (room.game.roundTimer) clearTimeout(room.game.roundTimer);
-    if (room.game.choiceTimer) clearTimeout(room.game.choiceTimer);
-
-    // Reset game with current players
+    // Build turnOrder from players currently in the room
     const turnOrder = Array.from(room.users.keys());
     rm.initGame(currentRoomId, turnOrder, room.totalRounds);
 
@@ -542,6 +573,30 @@ module.exports = function registerHandlers(io, socket) {
     startChoosing(io, currentRoomId);
   });
 
+  // ── SKRIBBLE: Host restarts game to lobby ──────────────────────────────────
+  socket.on('game:restart', () => {
+    if (!currentRoomId) return;
+    const room = rm.getRoom(currentRoomId);
+    if (!room || room.gameMode !== 'skribble') return;
+    if (socket.id !== room.hostId) return; // Only host can restart
+    if (!room.game || room.game.phase !== 'game_over') return;
+
+    rm.resetGameToLobby(currentRoomId);
+
+    // Clear canvas
+    rm.clearWhiteboardActions(currentRoomId);
+    io.to(currentRoomId).emit('whiteboard:sync', []);
+
+    const r = rm.getRoom(currentRoomId);
+    // Broadcast lobby state + host so all clients re-render correctly
+    io.to(currentRoomId).emit('game:lobby', {
+      phase: 'lobby',
+      hostId: room.hostId,
+      scores: r.game.scores,
+    });
+    io.to(currentRoomId).emit('room:host', { hostId: room.hostId });
+  });
+
   // ── DISCONNECT ─────────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     if (!currentRoomId) return;
@@ -551,23 +606,36 @@ module.exports = function registerHandlers(io, socket) {
     });
 
     const room = rm.getRoom(currentRoomId);
+    const wasHost = room?.hostId === socket.id;
     const wasDrawer = room?.game?.drawerId === socket.id;
 
     const remainingRoom = rm.removeUser(currentRoomId, socket.id);
     if (remainingRoom !== null) {
+      // Transfer host if host disconnected
+      if (wasHost) {
+        const remainingUsers = Array.from(remainingRoom.users.keys());
+        if (remainingUsers.length > 0) {
+          remainingRoom.hostId = remainingUsers[0];
+          io.to(currentRoomId).emit('room:host', { hostId: remainingRoom.hostId });
+        }
+      }
+
       io.to(currentRoomId).emit('room:users', rm.getUsersArray(currentRoomId));
       io.to(currentRoomId).emit('room:user_left', { userId: socket.id });
 
-      // If in skribble and the drawer left during drawing, end the round
+      // If in skribble and the drawer left during drawing, end the round immediately
       if (remainingRoom.gameMode === 'skribble' && remainingRoom.game) {
         const g = remainingRoom.game;
         if (wasDrawer && g.phase === 'drawing') {
-          endRound(io, currentRoomId);
+          endRound(io, currentRoomId, 'drawerLeft');
         } else if (g.phase === 'choosing' && wasDrawer) {
           // Advance to next player
+          if (g.choiceTimer) { clearTimeout(g.choiceTimer); g.choiceTimer = null; }
           g.round += 1;
-          g.turnIndex = (g.turnIndex + 1) % g.turnOrder.length;
+          g.turnIndex = (g.turnIndex + 1) % (g.turnOrder.length || 1);
           startChoosing(io, currentRoomId);
+        } else if (g.phase === 'drawing') {
+          checkAllGuessed(io, currentRoomId);
         }
       }
     }

@@ -3,21 +3,30 @@
 import React, { useMemo } from 'react'
 import styles from './Skribble.module.css'
 
-export default function Scoreboard({ scores = {}, users = [], currentUserId, drawerId }) {
+export default function Scoreboard({
+  scores = {},
+  users = [],
+  currentUserId,
+  drawerId,
+  turnOrder = [],
+  phase = '',
+}) {
   const ranked = useMemo(() => {
     const allScores = Object.values(scores)
     const max = allScores.length > 0 ? Math.max(...allScores) : 0
     const allZero = allScores.every(s => s === 0)
+    const isGameActive = phase !== 'lobby' && turnOrder.length > 0
 
     return users
       .map(u => ({
         ...u,
         score: scores[u.id] ?? 0,
         isDrawer: u.id === drawerId,
+        isSpectator: isGameActive && !turnOrder.includes(u.id),
         hasCrown: !allZero && scores[u.id] === max,
       }))
       .sort((a, b) => b.score - a.score)
-  }, [scores, users, drawerId])
+  }, [scores, users, drawerId, turnOrder, phase])
 
   return (
     <div className={styles.scoreboard}>
@@ -56,6 +65,9 @@ export default function Scoreboard({ scores = {}, users = [], currentUserId, dra
                 </span>
                 {player.isDrawer && (
                   <span className={styles.drawerBadge}>✏️ Drawing</span>
+                )}
+                {player.isSpectator && (
+                  <span className={styles.spectatorBadge} title="Joined mid-game, will play next game">👀 Spectator</span>
                 )}
               </div>
 

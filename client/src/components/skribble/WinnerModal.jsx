@@ -9,6 +9,7 @@ export default function WinnerModal({
   scores = {},
   users = [],
   currentUserId,
+  isHost = false,
   onLeave,
   onRestart,
 }) {
@@ -74,13 +75,19 @@ export default function WinnerModal({
 
         {/* Actions */}
         <div className={styles.winnerActions}>
-          <button
-            id="winner-restart-btn"
-            className={styles.winnerRestartBtn}
-            onClick={onRestart}
-          >
-            🔄 Play Again
-          </button>
+          {isHost ? (
+            <button
+              id="winner-restart-btn"
+              className={styles.winnerRestartBtn}
+              onClick={onRestart}
+            >
+              🔄 Start Again
+            </button>
+          ) : (
+            <div className={styles.winnerWaitingHost}>
+              ⏳ Waiting for host to start again…
+            </div>
+          )}
           <button
             id="winner-leave-btn"
             className={styles.winnerLeaveBtn}

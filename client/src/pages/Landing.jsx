@@ -1,10 +1,11 @@
 // Landing.jsx -- Room entry page with Collaboard / Skribble mode selection
 
-import React, { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useCallback, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import styles from './Landing.module.css'
 import CodeSlots from '../components/ui/CodeSlots'
+import { useToast } from '../components/ui/ToastProvider'
 
 const MODE_INFO = {
   freeform: {
@@ -24,6 +25,9 @@ const PRESET_COLORS = [
 
 export default function Landing() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const toast    = useToast()
+
   const [name, setName]           = useState('')
   const [color, setColor]         = useState(PRESET_COLORS[0])
   const [roomInput, setRoomInput] = useState('')
@@ -32,8 +36,24 @@ export default function Landing() {
   const [joinError, setJoinError] = useState(false)
   const [gameMode, setGameMode]   = useState('freeform')  // 'freeform' | 'skribble'
   const [totalRounds, setTotalRounds] = useState(3)
+  const [maxPlayers, setMaxPlayers]   = useState(4)
 
   const modeInfo = MODE_INFO[gameMode]
+
+  // Handle error redirected from Room.jsx (e.g. "Room is full")
+  useEffect(() => {
+    if (location.state?.error) {
+      setTab('join')
+      if (location.state.roomCode) {
+        setRoomInput(location.state.roomCode)
+      }
+      setError(location.state.error)
+      setJoinError(true)
+      toast(location.state.error, 'error')
+      // Clear state so reload doesn't re-trigger
+      window.history.replaceState({}, document.title)
+    }
+  }, [location.state, toast])
 
   const saveSession = (data) => {
     sessionStorage.setItem('collaboard_user', JSON.stringify(data))
@@ -42,9 +62,9 @@ export default function Landing() {
   const handleCreate = useCallback(() => {
     if (!name.trim()) { setError('Please enter your name'); return }
     const roomId = uuidv4().slice(0, 8).toUpperCase()
-    saveSession({ name: name.trim(), color, gameMode, totalRounds })
-    navigate(`/room/${roomId}`, { state: { gameMode, totalRounds } })
-  }, [name, color, navigate, gameMode, totalRounds])
+    saveSession({ name: name.trim(), color, gameMode, totalRounds, maxPlayers })
+    navigate(`/room/${roomId}`, { state: { gameMode, totalRounds, maxPlayers } })
+  }, [name, color, navigate, gameMode, totalRounds, maxPlayers])
 
   const handleJoin = useCallback((code) => {
     const finalCode = (code ?? roomInput).trim().toUpperCase()
@@ -234,28 +254,56 @@ export default function Landing() {
                   </button>
                 </div>
 
-                {/* Rounds selector — only shown for Skribble */}
+                {/* Settings selector — only shown for Skribble */}
                 {gameMode === 'skribble' && (
-                  <div className={styles.roundsRow}>
-                    <label className={styles.roundsLabel} htmlFor="rounds-input">
-                      Rounds per player
-                    </label>
-                    <div className={styles.roundsControls}>
-                      <button
-                        type="button"
-                        className={styles.roundsBtn}
-                        onClick={() => setTotalRounds(r => Math.max(1, r - 1))}
-                        aria-label="Decrease rounds"
-                      >−</button>
-                      <span id="rounds-input" className={styles.roundsValue}>{totalRounds}</span>
-                      <button
-                        type="button"
-                        className={styles.roundsBtn}
-                        onClick={() => setTotalRounds(r => Math.min(10, r + 1))}
-                        aria-label="Increase rounds"
-                      >+</button>
+                  <div className={styles.skribbleSettingsRow}>
+                    <div className={styles.roundsRow}>
+                      <label className={styles.roundsLabel} htmlFor="players-input">
+                        Number of players
+                      </label>
+                      <div className={styles.roundsControls}>
+                        <button
+                          type="button"
+                          id="decrease-players-btn"
+                          className={styles.roundsBtn}
+                          onClick={() => setMaxPlayers(p => Math.max(2, p - 1))}
+                          aria-label="Decrease players"
+                        >−</button>
+                        <span id="players-input" className={styles.roundsValue}>{maxPlayers}</span>
+                        <button
+                          type="button"
+                          id="increase-players-btn"
+                          className={styles.roundsBtn}
+                          onClick={() => setMaxPlayers(p => Math.min(10, p + 1))}
+                          aria-label="Increase players"
+                        >+</button>
+                      </div>
+                      <span className={styles.roundsHint}>Room capacity ({maxPlayers} max)</span>
                     </div>
-                    <span className={styles.roundsHint}>Each player draws {totalRounds} time{totalRounds !== 1 ? 's' : ''}</span>
+
+                    <div className={styles.roundsRow}>
+                      <label className={styles.roundsLabel} htmlFor="rounds-input">
+                        Number of rounds
+                      </label>
+                      <div className={styles.roundsControls}>
+                        <button
+                          type="button"
+                          id="decrease-rounds-btn"
+                          className={styles.roundsBtn}
+                          onClick={() => setTotalRounds(r => Math.max(1, r - 1))}
+                          aria-label="Decrease rounds"
+                        >−</button>
+                        <span id="rounds-input" className={styles.roundsValue}>{totalRounds}</span>
+                        <button
+                          type="button"
+                          id="increase-rounds-btn"
+                          className={styles.roundsBtn}
+                          onClick={() => setTotalRounds(r => Math.min(10, r + 1))}
+                          aria-label="Increase rounds"
+                        >+</button>
+                      </div>
+                      <span className={styles.roundsHint}>Each player draws {totalRounds} time{totalRounds !== 1 ? 's' : ''}</span>
+                    </div>
                   </div>
                 )}
 
